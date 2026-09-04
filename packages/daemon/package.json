@@ -1,0 +1,32 @@
+{
+  "name": "@headroom/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "claude-usage-daemon": "./src/cli.ts",
+    "claude-usage-statusline": "./bin/statusline.mjs"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@headroom/shared": "workspace:*",
+    "hono": "^4.13.5",
+    "@hono/node-server": "^2.1.1",
+    "ccusage": "20.0.20",
+    "chokidar": "^5.0.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "@types/node": "^24.13.3",
+    "tsx": "^4.23.12"
+  }
+}

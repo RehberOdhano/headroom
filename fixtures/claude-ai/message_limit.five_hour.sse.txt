@@ -1,0 +1,58 @@
+# Fixture meta
+# endpoint: POST https://claude.ai/api/organizations/{org_id}/chat_conversations/{conversation_id}/completion
+# captured_at: 2026-08-29T09:28:30Z
+# plan: Pro
+# account_state: credits disabled (extra_usage.is_enabled=false) — same account as
+#   message_limit.overage.sse.txt, captured 3 days later after the user turned the "usage
+#   credits" toggle off. See usage.get.credits-disabled.json, captured in the same session.
+#   representativeClaim in the message_limit event below is "five_hour" — the non-overage
+#   variant that message_limit.overage.sse.txt's comments flagged as missing.
+# unverified:
+#   - message_limit shape when representativeClaim is "seven_day" instead of "five_hour" or
+#     "overage" (i.e. the weekly limit, not the session limit, is the binding one). Only
+#     "five_hour" and "overage" have been captured so far.
+#   - Whether windows can have more than the 2 keys seen here ("5h", "7d") — e.g. a per-model
+#     key when seven_day_opus/seven_day_sonnet are populated (still unverified — see
+#     usage.get.credits-disabled.json's own unverified list).
+#   - resolved.spend and resolved.notice were both null in every capture so far — real shape
+#     when populated is unverified.
+#   - content_block_delta events below are abbreviated; real streams emit many more.
+# notes:
+#   - Compare message_limit.message_limit against message_limit.overage.sse.txt: overageStatus
+#     is replaced by overageDisabledReason ("org_level_disabled") when overageInUse is false —
+#     these two keys look mutually exclusive based on overageInUse, not independently optional.
+#     windows is keyed "5h"/"7d" here, not "session"/"weekly" as originally guessed, and not
+#     "overage" as in the other capture — confirms the dynamic-keying behavior documented in
+#     docs/discovery/claude-ai-endpoints.md, with the real key names now known for both cases
+#     captured so far.
+#   - A `resolved` object appears here that was completely absent from the overage capture:
+#     {status, limit: (same per-entry shape as usage.get's limits[] array), spend, disabled_reason,
+#     notice}. Whether `resolved` is ever present alongside representativeClaim: "overage" is
+#     unverified — it wasn't in that capture, but that capture is now 3 days stale relative to
+#     this one, so this could also be a recent claude.ai change rather than an overage-specific
+#     omission. Re-verify by capturing a fresh overage-state message_limit if the account enters
+#     overage again.
+
+event: conversation_ready
+data: {"type":"conversation_ready"}
+
+event: message_start
+data: {"type":"message_start","message":{"id":"chatcompl_011CeWoYGfp85DwYC41ZXrQj","type":"message","role":"assistant","model":"claude-sonnet-5","parent_uuid":"01a04cd9-5e12-7e54-bba3-427607393ca5","uuid":"01a04cd9-5e12-71c8-9515-4894f0bcd29e","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"trace_id":"070438517ca957e94851c3c515ecbe70","request_id":"req_011CeWoYEveE22b7wLoYoZ29"},"discarded_parent_message_uuid":null}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"","citations":[],"start_timestamp":"2026-08-29T09:28:30.056507873Z","stop_timestamp":null,"flags":null}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello."}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0,"stop_timestamp":"2026-08-29T09:28:30.628511943Z"}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null}}
+
+event: message_limit
+data: {"type":"message_limit","message_limit":{"type":"within_limit","resetsAt":null,"remaining":null,"perModelLimit":null,"representativeClaim":"five_hour","overageDisabledReason":"org_level_disabled","overageInUse":false,"windows":{"5h":{"status":"within_limit","resets_at":1788007200,"utilization":0.29},"7d":{"status":"within_limit","resets_at":1788008400,"utilization":0.55}},"resolved":{"status":"ok","limit":{"kind":"session","group":"session","percent":29,"severity":"normal","resets_at":"2026-08-29T12:40:00+00:00","scope":null,"is_active":true},"spend":null,"disabled_reason":"org_level_disabled","notice":null}}}
+
+event: message_stop
+data: {"type":"message_stop"}
