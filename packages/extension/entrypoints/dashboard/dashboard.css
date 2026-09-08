@@ -1,0 +1,1090 @@
+:root {
+  color-scheme: light dark;
+
+  --color-bg: #ffffff;
+  --color-bg-subtle: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-border: #e5e7eb;
+  --color-border-strong: #d1d5db;
+  --color-text: #111827;
+  --color-text-muted: #6b7280;
+  --color-text-faint: #9ca3af;
+  --color-accent: #3b82f6;
+  --color-accent-strong: #2563eb;
+  --color-accent-bg: #eff6ff;
+  --color-warning: #b45309;
+  --color-warning-bg: #fffbeb;
+  --color-warning-border: #fde68a;
+  --color-danger: #dc2626;
+  --color-success: #16a34a;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 1px rgba(15, 23, 42, 0.03);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0c1015;
+    --color-bg-subtle: #12171e;
+    --color-surface: #161c24;
+    --color-border: #262e38;
+    --color-border-strong: #333d4a;
+    --color-text: #e7e9ec;
+    --color-text-muted: #97a1af;
+    --color-text-faint: #6b7684;
+    --color-accent: #5b9dff;
+    --color-accent-strong: #7db2ff;
+    --color-accent-bg: rgba(91, 157, 255, 0.14);
+    --color-warning: #f5a524;
+    --color-warning-bg: rgba(245, 165, 36, 0.1);
+    --color-warning-border: rgba(245, 165, 36, 0.35);
+    --color-danger: #f87171;
+    --color-success: #34d399;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5) 64px;
+}
+
+/* Two-column layout for paired cards (bars; search + retention). Cards inside keep their own
+   margin-bottom, so this only needs to provide the gap between columns. If only one child ends
+   up rendering (e.g. no retention warnings), :only-child spans it across both columns instead
+   of leaving an empty half — a pure-CSS fallback, no layout logic needed in the components. */
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--space-4);
+}
+
+.grid-2 > *:only-child {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Three-up layer summary (Guardrails permissions). Same collapse-on-narrow behavior as .grid-2. */
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+@media (max-width: 900px) {
+  .grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: 2px;
+}
+
+.page-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.page-title {
+  font-size: 1.45rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.page-subtitle {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  margin: 4px 0 var(--space-5);
+  line-height: 1.5;
+}
+
+/* Top-level tab navigation — distinct from .segmented below (a small in-section filter, e.g.
+   the 24h/7d/30d window picker) since this is primary page navigation, not a filter. */
+.tabs {
+  display: flex;
+  gap: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--space-5);
+}
+
+.tab-button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  padding: var(--space-3) 1px;
+  margin-bottom: -1px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.tab-button:hover {
+  color: var(--color-text);
+}
+
+.tab-button[aria-selected='true'] {
+  color: var(--color-text);
+  border-bottom-color: var(--color-accent);
+}
+
+/* Segmented window control */
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  gap: 2px;
+  margin-bottom: var(--space-5);
+}
+
+.segmented button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 6px 16px;
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.segmented button:hover {
+  color: var(--color-text);
+}
+
+.segmented button[aria-pressed='true'] {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Cards */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin-bottom: var(--space-4);
+}
+
+.card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.card-title {
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin: 0;
+}
+
+.card-stat {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Current-value progress row */
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.progress-percent {
+  font-size: 1.9rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  min-width: 4.2ch;
+  letter-spacing: -0.02em;
+}
+
+.progress-track {
+  flex: 1;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-subtle);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  transition: width 0.4s ease;
+}
+
+.progress-meta {
+  font-size: 0.78rem;
+  color: var(--color-text-faint);
+  white-space: nowrap;
+  text-align: right;
+  min-width: 11ch; /* fits both "in 3h 14m" and "Thu, 8:00 PM" without the track jumping width */
+}
+
+/* Chart */
+.chart-empty {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  padding: var(--space-5) 0;
+  text-align: center;
+}
+
+.chart-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.chart-y-labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  height: 130px;
+  padding: 2px 0;
+  font-size: 0.65rem;
+  color: var(--color-text-faint);
+  flex-shrink: 0;
+  min-width: 2.6rem;
+}
+
+.chart-svg-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.chart-svg {
+  width: 100%;
+  height: 130px;
+  display: block;
+  overflow: visible;
+}
+
+.chart-gridline {
+  stroke: var(--color-border);
+  stroke-width: 0.5;
+}
+
+.chart-threshold {
+  stroke: var(--color-warning);
+  stroke-width: 0.5;
+  stroke-dasharray: 2 2;
+  opacity: 0.7;
+}
+
+.chart-x-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--color-text-faint);
+  margin-top: 6px;
+  padding-left: calc(2.6rem + var(--space-2));
+}
+
+/* Forecast line */
+.forecast-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.82rem;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--color-border);
+  line-height: 1.5;
+}
+
+.forecast-line.at-risk {
+  color: var(--color-warning);
+}
+
+.forecast-line.on-track {
+  color: var(--color-text-muted);
+}
+
+/* Buttons */
+.btn {
+  appearance: none;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--color-bg-subtle);
+  border-color: var(--color-text-faint);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-accent-strong);
+  border-color: var(--color-accent-strong);
+}
+
+/* Stat cards (CLI attribution) */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.stat-card {
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+
+.stat-value {
+  font-size: 1.3rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.stat-label {
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+/* Tables */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  min-width: 320px;
+}
+
+.data-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  padding: 8px 12px;
+  background: var(--color-bg-subtle);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr:hover {
+  background: var(--color-bg-subtle);
+}
+
+.table-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.table-title:first-child {
+  margin-top: 0;
+}
+
+.table-subtitle {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+
+/* Search */
+.search-form {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.search-input {
+  flex: 1;
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-bg);
+}
+
+.result-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+.result-snippet {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: var(--color-bg-subtle);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.result-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+
+.result-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.search-pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-3);
+}
+
+/* Retention warnings */
+.warning-card {
+  border: 1px solid var(--color-warning-border);
+  background: var(--color-warning-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.warning-info p {
+  margin: 0;
+}
+
+.warning-title {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.warning-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 2px !important;
+}
+
+/* Guardrails (permissions/hooks/skills/CLAUDE.md) */
+/* Small rounded rect, not a full pill — a pill shape with `white-space: nowrap` is exactly what
+   let a long pattern (e.g. `Bash(docker compose -f docker-compose.override.yml up *)`) overflow
+   its card instead of wrapping, since a grid track sized with `minmax(0, 1fr)` won't grow to fit
+   an unbreakable child, it just lets it spill out visually. `overflow-wrap: anywhere` lets a
+   genuinely long pattern wrap onto a second line inside the badge instead. */
+.effect-badge {
+  display: inline-block;
+  font-size: 0.74rem;
+  font-family: var(--font-mono);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  margin: 2px 6px 2px 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.effect-allow {
+  background: var(--color-accent-bg);
+  color: var(--color-accent-strong);
+}
+
+.effect-ask {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.effect-deny {
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--color-danger);
+}
+
+.rule-label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.rule-pattern {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.rule-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* Icon-only override buttons (Allow/Ask/Deny) — same .btn base, just square and centered on a
+   14px icon instead of "Override: Allow" ×3 per row. Border tints toward the effect's own color
+   on hover/focus so the icon-only button is still easy to tell apart at a glance. */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+/* The three override icons as one atomic group — never wraps internally, even when the outer
+   .rule-actions row is tight enough to wrap the (separate) "Remove" button onto its own line. */
+.rule-actions-icons {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-1);
+}
+
+.effect-btn-allow:hover:not(:disabled),
+.effect-btn-allow:focus-visible {
+  border-color: var(--color-accent-strong);
+  color: var(--color-accent-strong);
+}
+
+.effect-btn-ask:hover:not(:disabled),
+.effect-btn-ask:focus-visible {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.effect-btn-deny:hover:not(:disabled),
+.effect-btn-deny:focus-visible {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* Filter boxes (Permissions, known-risky commands, Hooks, Skills) — same input style as search,
+   just always full-width and with a bit more breathing room above/below than the search form's
+   own already-provided margin. */
+.filter-input {
+  display: block;
+  width: 100%;
+  margin-bottom: var(--space-3);
+}
+
+.add-rule-block {
+  margin-bottom: var(--space-4);
+}
+
+/* Compact project picker: label + select + advanced disclosure in one row instead of a tall
+   stacked card. */
+.compact-card {
+  padding: var(--space-4) var(--space-5);
+}
+
+.project-picker-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.project-picker-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding-top: 8px;
+  flex: 0 0 auto;
+}
+
+.project-picker-row > .select-wrap {
+  flex: 1 1 320px;
+  min-width: 200px;
+}
+
+.project-picker-advanced {
+  flex: 1 1 260px;
+  font-size: 0.82rem;
+  min-width: 0;
+}
+
+.project-picker-advanced summary {
+  cursor: pointer;
+  padding-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.project-picker-advanced[open] {
+  flex-basis: 100%;
+}
+
+.manual-path-form {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+.manual-path-form .search-input {
+  flex: 1 1 280px;
+  min-width: 200px;
+}
+
+/* Custom, theme-aware <select> arrow — the native OS chevron (light background swatch, mismatched
+   sizing) doesn't fit the dark surface, so the native appearance is hidden entirely and a small
+   CSS-drawn chevron takes its place. */
+.select-wrap {
+  position: relative;
+  display: block;
+}
+
+.select-wrap select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 32px;
+}
+
+.select-wrap::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--color-text-muted);
+  border-bottom: 1.5px solid var(--color-text-muted);
+  transform: translateY(-65%) rotate(45deg);
+  pointer-events: none;
+}
+
+/* Simple inline spinner for "still loading" states (project switch, CLAUDE.md file list). */
+.spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Three-up layer summary cards (Global/Project/Local). `min-width: 0` matters here: a grid item
+   defaults to a content-based minimum width, which can force the track wider than its
+   `minmax(0, 1fr)` share to fit an unbreakable child — this makes the card itself the thing that
+   shrinks/wraps instead. */
+.layer-card {
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.grid-3 > *,
+.grid-2 > * {
+  min-width: 0;
+}
+
+.layer-title {
+  font-size: 0.82rem;
+  font-weight: 650;
+  margin: 0;
+}
+
+.layer-subtitle {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  color: var(--color-text-faint);
+  margin: 2px 0 var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.layer-count {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-2);
+}
+
+.layer-effect-row {
+  margin-bottom: var(--space-1);
+}
+
+/* Capped-height, scrollable content areas — used instead of pagination for anything whose length
+   depends on the user's own data (permission rules, hooks, skills) rather than this app's own
+   fixed lists. A real project's settings.json can easily carry 20+ rules; without a cap, that one
+   card would dominate the whole page. Same idea `.claude-md-preview` already used for file
+   content, generalized with a shared scrollbar style so it reads as one consistent pattern rather
+   than a one-off. Each container below only sets its own `max-height`. */
+.scroll-box {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+.scroll-box::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scroll-box::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-box::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 4px;
+}
+
+.layer-rules-scroll {
+  max-height: 220px;
+  padding-right: 4px;
+}
+
+.hook-list {
+  max-height: 400px;
+  padding-right: 4px;
+}
+
+.skills-scroll {
+  max-height: 400px;
+  padding-right: 4px;
+}
+
+.rules-scroll {
+  max-height: 420px;
+}
+
+/* Known-risky-commands table: content wraps instead of the data-table default nowrap, since a
+   pattern + description + several buttons per row won't fit on one line. Sticky header so the
+   column labels stay visible while scrolling a long list, harmless on tables short enough not to
+   scroll at all. */
+.rules-table td,
+.rules-table th {
+  white-space: normal;
+  vertical-align: top;
+}
+
+.rules-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/* Hooks: a card list, not a table. A hook's command is frequently a long, unbreakable-looking
+   path (e.g. `${CLAUDE_PROJECT_DIR}/.claude/hooks/...sh`) that a fixed-width table column has no
+   good way to show — it either forces a horizontal scrollbar or gets clipped. A card just wraps
+   it at full available width, no column-sizing tradeoff to make. */
+.hook-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hook-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.hook-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+
+.hook-event-badge {
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-accent-strong);
+  background: var(--color-accent-bg);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.hook-matcher {
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+}
+
+.hook-command {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: var(--color-bg-subtle);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  margin: 0 0 6px;
+}
+
+.hook-source {
+  font-size: 0.72rem;
+  color: var(--color-text-faint);
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+
+/* CLAUDE.md preview/editor */
+.md-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.md-toolbar .segmented {
+  margin-bottom: 0;
+}
+
+.claude-md-preview {
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  overflow-wrap: anywhere;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.md-editor {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  max-height: 480px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  color: var(--color-text);
+  resize: vertical;
+}
+
+.md-editor:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-bg);
+}
+
+/* Rendered markdown typography inside .claude-md-preview */
+.markdown-body {
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  margin: 1em 0 0.4em;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.markdown-body p {
+  margin: 0 0 0.8em;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0 0 0.8em;
+  padding-left: 1.4em;
+}
+
+.markdown-body li {
+  margin-bottom: 0.2em;
+}
+
+.markdown-body code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-accent-bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.markdown-body pre {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  overflow-x: auto;
+}
+
+.markdown-body pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown-body a {
+  color: var(--color-accent-strong);
+}
+
+.markdown-body blockquote {
+  margin: 0 0 0.8em;
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  margin-bottom: 0.8em;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--color-border);
+  padding: 4px 8px;
+  font-size: 0.82rem;
+}
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 1em 0;
+}
+
+/* Misc */
+.hint {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.error-text {
+  font-size: 0.85rem;
+  color: var(--color-danger);
+}
+
+.page-footer {
+  color: var(--color-text-faint);
+  font-size: 0.78rem;
+  margin-top: var(--space-6);
+  line-height: 1.6;
+}
+

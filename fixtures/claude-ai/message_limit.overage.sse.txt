@@ -1,0 +1,50 @@
+# Fixture meta
+# endpoint: POST https://claude.ai/api/organizations/{org_id}/chat_conversations/{conversation_id}/completion
+# captured_at: 2026-08-26T17:23:32Z
+# plan: Pro
+# account_state: overage — extra_usage enabled and already in use (see usage.get.overage.json
+#   captured the same session). representativeClaim in the message_limit event below is "overage".
+# RESOLVED 2026-08-29: message_limit.five_hour.sse.txt now has the non-overage variant
+#   (representativeClaim: "five_hour", windows keyed "5h"/"7d") — the guess below about
+#   "session"/"weekly" keys was wrong, kept here for the record. That capture also has a
+#   `resolved` object entirely absent here — unclear if that's overage-specific or a claude.ai
+#   change in the 3 days between captures; re-verify if the account re-enters overage.
+# unverified:
+#   - Whether message_limit.type ever takes a value other than "within_limit" (e.g. an
+#     over-limit / blocked state) and what fields change when it does.
+#   - notice.text and notice.cta were both null in this capture; unknown what they look like when
+#     populated (e.g. approaching a hard limit).
+#   - content_block_delta events below are abbreviated (two deltas shown); real streams emit many
+#     more, one per token/chunk. Only the events relevant to limits/shape are exact captures.
+# notes:
+#   - Response is a raw SSE stream (text/event-stream), read via a fetch() body reader, not EventSource.
+#   - Standard Anthropic message-stream events (message_start, content_block_start/delta/stop,
+#     message_delta, message_stop) bracket a message_limit event that arrives after message_delta
+#     and before message_stop.
+
+event: conversation_ready
+data: {"type":"conversation_ready"}
+
+event: message_start
+data: {"type":"message_start","message":{"id":"chatcompl_011CeRkLZuwYqK2zq1YVRoeW","type":"message","role":"assistant","model":"claude-fable-5","parent_uuid":"01a03f19-3445-742c-bee0-bc5cff07e6f1","uuid":"01a03f19-3445-72c9-a73e-9e34c310268e","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"trace_id":"00a66386a6e75b8f78a4ee859a3a6cd2","request_id":"req_011CeRkLYCVxH1Bbq6GJ9mjZ"},"discarded_parent_message_uuid":null}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"","citations":[],"start_timestamp":"2026-08-26T17:23:32.639944489Z","stop_timestamp":null,"flags":null}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello,"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" ready when you are."}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0,"stop_timestamp":"2026-08-26T17:23:32.83778041Z"}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null}}
+
+event: message_limit
+data: {"type":"message_limit","message_limit":{"type":"within_limit","resetsAt":null,"remaining":null,"perModelLimit":null,"representativeClaim":"overage","overageStatus":"within_limit","overageResetsAt":1788220800,"overageInUse":true,"windows":{"overage":{"status":"within_limit","resets_at":1788220800,"utilization":0.0}},"notice":{"title":"Now using usage credits","text":null,"cta":null,"is_dismissible":true}}}
+
+event: message_stop
+data: {"type":"message_stop"}

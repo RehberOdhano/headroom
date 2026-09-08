@@ -1,0 +1,41 @@
+{
+  "_fixture_meta": {
+    "endpoint": "GET https://claude.ai/v1/code/sessions/{session_id}/events?limit=&sort_order=desc",
+    "captured_at": "2026-09-04T18:15:02Z",
+    "plan": "Pro",
+    "account_state": "not in overage, five_hour representative",
+    "notes": "One event of type `rate_limit_event` from a real Claude Code on the web session's event log (`docs/discovery/claude-ai-endpoints.md`'s new claude.ai/code section). Requires an `anthropic-version` header on the request (missing it returns a 400 invalid_request_error) — the live page's own fetch already sends it; only a manual/hook-side fetch needs to add it explicitly. `session_id` in the payload uses a `cse_` prefix, distinct from the `session_...` id in the URL/route for the same session. Structurally close to the existing `message_limit` SSE event for claude.ai chat (`message_limit.five_hour.sse.txt`): same `isUsingOverage`/`overageStatus`/`overageResetsAt` trio, same five_hour/seven_day exact utilization fractions — just wrapped as a discrete event in a REST-fetched event log instead of an inline SSE frame on a completion stream, and keyed `unifiedWindows` (full words: `five_hour`/`seven_day`) rather than `message_limit`'s short-coded `windows` (`5h`/`7d`).",
+    "unverified": [
+      "Whether an overage-representative variant exists for this event (this capture's account was never in overage during discovery)",
+      "Whether unifiedWindows ever carries a third key (e.g. a per-model or spend-limit window)",
+      "Whether rate_limit_event fires proactively (server push) or only appears once polled via GET .../events — this capture only observed it already present in a fetched event page, never watched it arrive live",
+      "The full session-event-log's other event_type values (control_request/control_response/control_cancel_request/user/assistant/system/result) are NOT captured here — several carry real message content (confirmed live: a session's own post_turn_summary field leaked prose during discovery), so per this project's 'never log conversation content' rule they are deliberately not fixtured. A schema for those, if built, must be validated structurally without ever persisting a real captured content field to a fixture file."
+    ]
+  },
+  "created_at": "2026-09-04T18:15:02.583592Z",
+  "event_type": "rate_limit_event",
+  "source": "worker",
+  "payload": {
+    "rate_limit_info": {
+      "isUsingOverage": false,
+      "overageResetsAt": 1790812800,
+      "overageStatus": "allowed",
+      "rateLimitType": "five_hour",
+      "resetsAt": 1788556200,
+      "status": "allowed",
+      "unifiedWindows": {
+        "five_hour": {
+          "resetsAt": 1788556200,
+          "utilization": 0.17
+        },
+        "seven_day": {
+          "resetsAt": 1788613200,
+          "utilization": 0.29
+        }
+      }
+    },
+    "session_id": "cse_014r3BLHbeyyhgaTFykTEWXt",
+    "type": "rate_limit_event",
+    "uuid": "b0d2421b-4187-4c2c-8a41-3139a5fb3650"
+  }
+}

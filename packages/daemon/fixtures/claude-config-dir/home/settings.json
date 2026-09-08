@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "defaultMode": "auto",
+    "allow": ["WebFetch"],
+    "ask": [],
+    "deny": ["Bash(sudo *)"]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "echo global-stop-hook" }
+        ]
+      }
+    ]
+  },
+  "model": "sonnet"
+}

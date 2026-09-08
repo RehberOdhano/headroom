@@ -1,0 +1,98 @@
+{
+  "_fixture_meta": {
+    "endpoint": "GET https://claude.ai/api/organizations/{org_id}/usage",
+    "captured_at": "2026-08-29T09:28:00Z",
+    "plan": "Pro",
+    "account_state": "credits disabled — extra_usage.is_enabled=false, user_disabled=true, credits_ever_enabled=true (same account as usage.get.overage.json, captured 3 days later after the user manually turned the 'usage credits' toggle off in Settings > Usage)",
+    "unverified": [
+      "extra_usage's real shape when credits_ever_enabled=false (never turned on at all) — this account has always had credits_ever_enabled=true",
+      "spend.limit and spend.cap when spend.enabled=true but nothing has been spent yet",
+      "Whether locked_reason (new in this capture, always null so far) or juniper_tide (new codename key, always null so far) ever take a non-null value"
+    ],
+    "notes": "Compare against usage.get.overage.json from the same account/org: several fields that were required non-null objects there are null here (spend.limit, spend.cap) or fully null-valued (extra_usage.monthly_limit/used_credits/utilization/currency/decimal_places) — see docs/discovery/claude-ai-endpoints.md for what this means for the schema. Two fields appear here that were entirely absent from the first capture: five_hour/seven_day/nimbus_quill gained a `locked_reason` key, and a new codename key `juniper_tide` appeared alongside the others."
+  },
+  "five_hour": {
+    "utilization": 29.0,
+    "resets_at": "2026-08-29T12:40:00.149485+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "seven_day": {
+    "utilization": 56.0,
+    "resets_at": "2026-08-29T13:00:00.149507+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "seven_day_oauth_apps": null,
+  "seven_day_opus": null,
+  "seven_day_sonnet": null,
+  "seven_day_cowork": null,
+  "seven_day_omelette": null,
+  "tangelo": null,
+  "iguana_necktie": null,
+  "omelette_promotional": null,
+  "nimbus_quill": {
+    "utilization": 0.0,
+    "resets_at": null,
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "cinder_cove": null,
+  "amber_ladder": null,
+  "juniper_tide": null,
+  "extra_usage": {
+    "is_enabled": false,
+    "monthly_limit": null,
+    "used_credits": null,
+    "utilization": null,
+    "currency": null,
+    "decimal_places": null,
+    "disabled_reason": null,
+    "user_disabled": true,
+    "spend_limit_reached": false,
+    "credits_ever_enabled": true,
+    "daily": null,
+    "weekly": null
+  },
+  "limits": [
+    {
+      "kind": "session",
+      "group": "session",
+      "percent": 29,
+      "severity": "normal",
+      "resets_at": "2026-08-29T12:40:00.149485+00:00",
+      "scope": null,
+      "is_active": false
+    },
+    {
+      "kind": "weekly_all",
+      "group": "weekly",
+      "percent": 56,
+      "severity": "normal",
+      "resets_at": "2026-08-29T13:00:00.149507+00:00",
+      "scope": null,
+      "is_active": true
+    }
+  ],
+  "spend": {
+    "used": { "amount_minor": 0, "currency": "USD", "exponent": 2 },
+    "limit": null,
+    "percent": 0,
+    "severity": "normal",
+    "enabled": false,
+    "disabled_reason": null,
+    "cap": null,
+    "balance": null,
+    "auto_reload": null,
+    "disclaimer": "Usage credits cover you when you hit your plan limits. [Learn more](https://support.claude.com/articles/12429409)",
+    "can_purchase_credits": true,
+    "can_toggle": true
+  },
+  "member_dashboard_available": false
+}

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": ["Bash(git commit *)"],
+    "ask": ["Bash(git push *)"],
+    "deny": ["Bash(rm -rf *)", "Read(.env)"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "echo pre-edit", "timeout": 10, "statusMessage": "Checking edit" }
+        ]
+      }
+    ]
+  }
+}
