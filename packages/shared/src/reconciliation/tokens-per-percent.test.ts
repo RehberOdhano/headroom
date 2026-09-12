@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimateTokensPerPercent } from './tokens-per-percent.js';
+import { estimateTokensPerPercent, estimateWeeklyCliSplit } from './tokens-per-percent.js';
 
 const day = (d: number) => `2026-08-${String(d).padStart(2, '0')}`;
 const at = (d: number, h = 12) => `2026-08-${String(d).padStart(2, '0')}T${String(h).padStart(2, '0')}:00:00Z`;
@@ -66,5 +66,53 @@ describe('estimateTokensPerPercent', () => {
     const richUsage = Array.from({ length: 7 }, (_, i) => ({ date: day(i + 1), totalTokens: 1000 }));
     const rich = estimateTokensPerPercent(richHistory, richUsage);
     expect(rich!.confidence).toBe('high');
+  });
+});
+
+describe('estimateWeeklyCliSplit', () => {
+  // 2026-08-03 and 2026-08-10 are both Mondays.
+  it('buckets percent deltas and CLI tokens into calendar weeks', () => {
+    const history = [
+      { capturedAt: at(3), percent: 10 },
+      { capturedAt: at(5), percent: 30 }, // +20, week of 08-03
+      { capturedAt: at(10), percent: 40 }, // +10, week of 08-10
+      { capturedAt: at(12), percent: 70 }, // +30, week of 08-10
+    ];
+    const usage = [
+      { date: day(3), totalTokens: 100_000 },
+      { date: day(5), totalTokens: 100_000 }, // week of 08-03 total: 200,000
+      { date: day(11), totalTokens: 300_000 }, // week of 08-10 total: 300,000
+    ];
+
+    const result = estimateWeeklyCliSplit(history, usage, 10_000);
+    expect(result).toEqual([
+      { weekStart: '2026-08-03', totalPercentDelta: 20, cliPercent: 20 },
+      { weekStart: '2026-08-10', totalPercentDelta: 40, cliPercent: 30 },
+    ]);
+  });
+
+  it('clamps an estimate that would otherwise exceed the real total for that week', () => {
+    const history = [
+      { capturedAt: at(17), percent: 50 },
+      { capturedAt: at(19), percent: 55 }, // +5, week of 08-17
+    ];
+    const usage = [{ date: day(18), totalTokens: 1_000_000 }];
+
+    const result = estimateWeeklyCliSplit(history, usage, 10_000);
+    expect(result).toEqual([{ weekStart: '2026-08-17', totalPercentDelta: 5, cliPercent: 5 }]);
+  });
+
+  it('returns an empty array with fewer than two percent points or a non-positive ratio', () => {
+    expect(estimateWeeklyCliSplit([], [{ date: day(1), totalTokens: 1000 }], 100)).toEqual([]);
+    expect(
+      estimateWeeklyCliSplit(
+        [
+          { capturedAt: at(3), percent: 10 },
+          { capturedAt: at(5), percent: 30 },
+        ],
+        [{ date: day(3), totalTokens: 1000 }],
+        0,
+      ),
+    ).toEqual([]);
   });
 });

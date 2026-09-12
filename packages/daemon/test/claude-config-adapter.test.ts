@@ -4,12 +4,14 @@ import { describe, expect, it } from 'vitest';
 import {
   findClaudeMdFiles,
   isValidProjectDir,
+  readAgentDefinitions,
   readClaudeConfigSnapshot,
   readClaudeMdContent,
   readHooksLayer,
   readSettingsLayer,
   readSkills,
   removePermissionRule,
+  writeAgentModel,
   writeClaudeMdContent,
   writePermissionRule,
 } from '../src/adapters/claude-config.js';
@@ -100,6 +102,104 @@ describe('readSkills', () => {
   });
 });
 
+describe('readAgentDefinitions', () => {
+  it('parses a real subagent frontmatter — one flat <name>.md, not a subfolder like SKILL.md', async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      const { claudeConfigDir, projectDir } = paths(dir);
+      const agents = readAgentDefinitions(projectDir, claudeConfigDir);
+      expect(agents).toEqual([
+        {
+          name: 'reviewer',
+          description: 'Read-only reviewer used only in daemon fixtures, not real conversation content.',
+          model: 'inherit',
+          path: path.join(projectDir, '.claude', 'agents', 'reviewer.md'),
+          scope: 'project',
+        },
+        {
+          name: 'personal-helper',
+          description: 'A global personal agent used only in daemon fixtures.',
+          model: 'haiku',
+          path: path.join(claudeConfigDir, 'agents', 'personal-helper.md'),
+          scope: 'global',
+        },
+      ]);
+    }, 'claude-config-dir');
+  });
+
+  it('omits project-scope agents when no projectDir is given', async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      const { claudeConfigDir } = paths(dir);
+      const agents = readAgentDefinitions(undefined, claudeConfigDir);
+      expect(agents.every((agent) => agent.scope === 'global')).toBe(true);
+      expect(agents.map((agent) => agent.name)).toEqual(['personal-helper']);
+    }, 'claude-config-dir');
+  });
+});
+
+describe('writeAgentModel', () => {
+  it('replaces an existing model: line, leaving every other frontmatter field and the body untouched', async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      const { projectDir } = paths(dir);
+      const requestedPath = path.join(projectDir, '.claude', 'agents', 'reviewer.md');
+      const before = readFileSync(requestedPath, 'utf-8');
+
+      const updated = writeAgentModel({ projectDir, requestedPath, model: 'haiku' });
+
+      expect(updated).toEqual({
+        name: 'reviewer',
+        description: 'Read-only reviewer used only in daemon fixtures, not real conversation content.',
+        model: 'haiku',
+        path: requestedPath,
+        scope: 'project',
+      });
+      const after = readFileSync(requestedPath, 'utf-8');
+      expect(after).toContain('model: haiku');
+      expect(after).not.toContain('model: inherit');
+      // Everything else — other frontmatter fields, the body — is byte-for-byte unchanged.
+      expect(after.replace('model: haiku', 'model: inherit')).toBe(before);
+    }, 'claude-config-dir');
+  });
+
+  it('inserts a model: line when the agent had none', async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      const { projectDir } = paths(dir);
+      const noModelPath = path.join(projectDir, '.claude', 'agents', 'no-model.md');
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(noModelPath, '---\nname: no-model\ndescription: Has no model field yet.\n---\n\nBody.\n');
+
+      const updated = writeAgentModel({ projectDir, requestedPath: noModelPath, model: 'opus' });
+
+      expect(updated?.model).toBe('opus');
+      expect(readFileSync(noModelPath, 'utf-8')).toContain('model: opus');
+    }, 'claude-config-dir');
+  });
+
+  it('refuses to write outside the project-scope agents directory it can itself enumerate', async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      const { claudeConfigDir, projectDir } = paths(dir);
+      // A real file, but the *global* agent — never a valid write target for a project-scoped call.
+      const globalAgentPath = path.join(claudeConfigDir, 'agents', 'personal-helper.md');
+
+      const result = writeAgentModel({ projectDir, requestedPath: globalAgentPath, model: 'opus' });
+
+      expect(result).toBeNull();
+      expect(readFileSync(globalAgentPath, 'utf-8')).toContain('model: haiku'); // untouched
+    }, 'claude-config-dir');
+  });
+
+  it('refuses to write a path that does not exist at all', async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      const { projectDir } = paths(dir);
+      const result = writeAgentModel({
+        projectDir,
+        requestedPath: path.join(projectDir, '.claude', 'agents', 'does-not-exist.md'),
+        model: 'opus',
+      });
+      expect(result).toBeNull();
+    }, 'claude-config-dir');
+  });
+});
+
 describe('readClaudeConfigSnapshot', () => {
   it('combines global/project/local layers and merges hooks', async () => {
     await withFixtureClaudeDir(async (dir) => {
@@ -110,6 +210,7 @@ describe('readClaudeConfigSnapshot', () => {
       expect(snapshot.local?.deny).toEqual(['Bash(kill *)']);
       expect(snapshot.hooks).toHaveLength(2);
       expect(snapshot.skills).toHaveLength(1);
+      expect(snapshot.agents).toHaveLength(2);
     }, 'claude-config-dir');
   });
 

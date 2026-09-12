@@ -11,12 +11,15 @@ import {
 } from './adapters/ccusage.js';
 import { aggregateByModel } from './aggregate.js';
 import { exportSessionMarkdown, findKnownProjectDirs, searchSessions } from './adapters/session-log.js';
+import { aggregateUsagePatterns } from './adapters/usage-patterns.js';
+import { getGitActivity } from './adapters/git-activity.js';
 import {
   findClaudeMdFiles,
   isValidProjectDir,
   readClaudeConfigSnapshot,
   readClaudeMdContent,
   removePermissionRule,
+  writeAgentModel,
   writeClaudeMdContent,
   writePermissionRule,
 } from './adapters/claude-config.js';
@@ -156,6 +159,8 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
+  app.get('/usage/patterns', (c) => c.json(aggregateUsagePatterns(claudeConfigDir)));
+
   app.get('/config/projects', (c) => c.json({ projects: findKnownProjectDirs(claudeConfigDir) }));
 
   app.get('/config', (c) => {
@@ -173,6 +178,18 @@ export function createApp(options: CreateAppOptions = {}) {
       return c.json({ error: 'invalid_query', message: '?projectDir must be an existing absolute directory' }, 400);
     }
     return c.json({ files: findClaudeMdFiles(projectDir) });
+  });
+
+  app.get('/config/git-activity', async (c) => {
+    const projectDir = c.req.query('projectDir');
+    const since = c.req.query('since');
+    if (!projectDir || !since) {
+      return c.json({ error: 'invalid_query', message: '?projectDir and ?since are required' }, 400);
+    }
+    if (!isValidProjectDir(projectDir)) {
+      return c.json({ error: 'invalid_query', message: '?projectDir must be an existing absolute directory' }, 400);
+    }
+    return c.json(await getGitActivity(projectDir, since));
   });
 
   app.get('/config/claude-md/content', (c) => {
@@ -203,6 +220,22 @@ export function createApp(options: CreateAppOptions = {}) {
     const ok = writeClaudeMdContent(projectDir, filePath, content);
     if (!ok) return c.json({ error: 'not_found' }, 404);
     return c.json({ content });
+  });
+
+  app.put('/config/agents/model', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const projectDir = body?.projectDir;
+    const filePath = body?.path;
+    const model = body?.model;
+    if (typeof projectDir !== 'string' || typeof filePath !== 'string' || typeof model !== 'string' || !model.trim()) {
+      return c.json({ error: 'invalid_body', message: 'projectDir, path, and a non-empty model are required' }, 400);
+    }
+    if (!isValidProjectDir(projectDir)) {
+      return c.json({ error: 'invalid_body', message: 'projectDir must be an existing absolute directory' }, 400);
+    }
+    const updated = writeAgentModel({ projectDir, requestedPath: filePath, model: model.trim() });
+    if (!updated) return c.json({ error: 'not_found' }, 404);
+    return c.json(updated);
   });
 
   app.post('/config/permissions', async (c) => {

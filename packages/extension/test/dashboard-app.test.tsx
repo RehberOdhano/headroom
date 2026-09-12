@@ -76,9 +76,15 @@ describe('dashboard App', () => {
   });
 
   it("notes each bar's own source — session and weekly can come from different snapshots", async () => {
+    // Relative to the real wall clock, not hardcoded absolute timestamps — a fixed past date
+    // eventually ages out of the dashboard's default 7-day window as real time passes (this
+    // exact test started failing that way once "now" crossed 7 days past its old hardcoded
+    // dates), the same class of bug this file's forecast test above works around too.
+    const now = new Date();
+    const fifteenMinutesLater = new Date(now.getTime() + 15 * 60 * 1000);
     await db.limitSnapshots.bulkAdd([
-      { capturedAt: '2026-09-04T18:00:00Z', source: 'usage', session: bar(10), weekly: bar(20) },
-      { capturedAt: '2026-09-04T18:15:02Z', source: 'rate_limit_event', session: bar(17), weekly: null },
+      { capturedAt: now.toISOString(), source: 'usage', session: bar(10), weekly: bar(20) },
+      { capturedAt: fifteenMinutesLater.toISOString(), source: 'rate_limit_event', session: bar(17), weekly: null },
     ]);
 
     render(<App />);
@@ -110,15 +116,15 @@ describe('dashboard App', () => {
     expect(panels.cli.hasAttribute('hidden')).toBe(true);
   });
 
-  describe('extra usage credits', () => {
-    it('is hidden entirely when no snapshot has ever carried extraCredits', async () => {
+  describe('usage credits', () => {
+    it('is hidden entirely when neither extraCredits nor a prepaid credits snapshot exists', async () => {
       await db.limitSnapshots.add({ capturedAt: new Date().toISOString(), source: 'usage', session: bar(10), weekly: bar(20) });
       render(<App />);
       await screen.findByText('Session (5h)');
-      expect(screen.queryByText('Extra usage credits')).toBeNull();
+      expect(screen.queryByText('Usage credits')).toBeNull();
     });
 
-    it('shows amounts with a note when percent is null instead of an empty card', async () => {
+    it('shows amounts with a note when percent is null instead of an empty section', async () => {
       await db.limitSnapshots.add({
         capturedAt: new Date().toISOString(),
         source: 'usage',
@@ -129,11 +135,12 @@ describe('dashboard App', () => {
 
       render(<App />);
 
-      expect(await screen.findByText('Extra usage credits')).toBeTruthy();
-      expect(await screen.findByText(/USD 12.50 \/ 50.00 used — percent not reported yet/)).toBeTruthy();
+      expect(await screen.findByText('Usage credits')).toBeTruthy();
+      expect(await screen.findByText('Spent this month')).toBeTruthy();
+      expect(await screen.findByText(/USD 12.50 \/ 50.00 spent — percent not reported yet/)).toBeTruthy();
     });
 
-    it('shows a plain "no usage yet" note when every field is null', async () => {
+    it('shows a plain "no usage yet" note when every extraCredits field is null', async () => {
       await db.limitSnapshots.add({
         capturedAt: new Date().toISOString(),
         source: 'usage',
@@ -144,8 +151,57 @@ describe('dashboard App', () => {
 
       render(<App />);
 
-      expect(await screen.findByText('Extra usage credits')).toBeTruthy();
       expect(await screen.findByText(/Enabled on your plan, but no usage reported yet/)).toBeTruthy();
+    });
+
+    it('shows the prepaid balance and auto-reload state under its own subheading', async () => {
+      await db.meta.put({
+        key: 'prepaidCredits',
+        value: JSON.stringify({ capturedAt: new Date().toISOString(), balanceAmount: 38.11, currency: 'USD', autoReloadEnabled: false, promoTranches: [] }),
+      });
+
+      render(<App />);
+
+      expect(await screen.findByText('Usage credits')).toBeTruthy();
+      expect(await screen.findByText('Balance')).toBeTruthy();
+      expect(await screen.findByText(/USD 38.11 available · auto-reload off/)).toBeTruthy();
+    });
+
+    it('notes the soonest-expiring promo tranche when one exists', async () => {
+      await db.meta.put({
+        key: 'prepaidCredits',
+        value: JSON.stringify({
+          capturedAt: new Date().toISOString(),
+          balanceAmount: 38.11,
+          currency: 'USD',
+          autoReloadEnabled: false,
+          promoTranches: [{ remainingAmount: 38.09, grantedAmount: 100, currency: 'USD', expiresAt: '2026-09-19T00:00:00Z' }],
+        }),
+      });
+
+      render(<App />);
+
+      expect(await screen.findByText(/USD 38.09 of promotional credit expires/)).toBeTruthy();
+    });
+
+    it('shows both subsections together in one card when both data sources are present', async () => {
+      await db.limitSnapshots.add({
+        capturedAt: new Date().toISOString(),
+        source: 'usage',
+        session: bar(10),
+        weekly: bar(20),
+        extraCredits: { percent: 14.63, usedAmount: 14.63, limitAmount: 100, currency: 'USD' },
+      });
+      await db.meta.put({
+        key: 'prepaidCredits',
+        value: JSON.stringify({ capturedAt: new Date().toISOString(), balanceAmount: 38.11, currency: 'USD', autoReloadEnabled: false, promoTranches: [] }),
+      });
+
+      render(<App />);
+
+      expect(await screen.findAllByText('Usage credits')).toHaveLength(1);
+      expect(await screen.findByText('Spent this month')).toBeTruthy();
+      expect(await screen.findByText('Balance')).toBeTruthy();
     });
   });
 });

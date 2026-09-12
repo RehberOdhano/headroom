@@ -1,0 +1,42 @@
+{
+  "_fixture_meta": {
+    "endpoint": "GET https://claude.ai/api/organizations/{org_id}/prepaid/credits",
+    "captured_at": "2026-09-12T00:00:00Z",
+    "plan": "Pro",
+    "account_state": "has a promotional credit grant, partially spent, not yet expired",
+    "unverified": [
+      "Shape of balance.money when non-null (only ever observed null, alongside a populated balance.credits)",
+      "Shape of auto_reload_settings, pending_invoice_amount_cents, last_paid_purchase_cents, expiry_policy_months when non-null — all null in this account's only capture",
+      "tranches[] item shape — always empty in this account; only promo_tranches has ever had entries",
+      "promo_tranches[].name when non-null — only ever observed null",
+      "next_expires_at when there is no promo credit at all (nullable vs. key omitted, unconfirmed)"
+    ],
+    "notes": "org_id in the URL comes from the lastActiveOrg cookie, same as /usage. amount_minor/exponent pairs work the same way /usage's spend.cap.credits does: divide amount_minor by 10^exponent for major units."
+  },
+  "amount": 3811,
+  "currency": "USD",
+  "balance": {
+    "money": null,
+    "credits": { "amount_minor": 3811, "exponent": 2 }
+  },
+  "balance_credits": 38,
+  "auto_reload_settings": null,
+  "pending_invoice_amount_cents": null,
+  "last_paid_purchase_cents": null,
+  "expiry_policy_months": null,
+  "tranches": [],
+  "promo_tranches": [
+    {
+      "remaining_amount_minor_units": 3809,
+      "currency": "USD",
+      "expires_at": "2026-09-19T00:00:00Z",
+      "granted_amount_minor_units": 10000,
+      "granted_at": "2026-07-22T06:42:50.714000Z",
+      "remaining": { "money": null, "credits": { "amount_minor": 3809, "exponent": 2 } },
+      "granted": { "money": null, "credits": { "amount_minor": 10000, "exponent": 2 } },
+      "program_id": "credit_program_v2",
+      "name": null
+    }
+  ],
+  "next_expires_at": "2026-09-19T00:00:00Z"
+}

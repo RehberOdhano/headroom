@@ -55,9 +55,28 @@ function createBadgeElement(): HTMLDivElement {
     display: 'none',
   });
   el.addEventListener('click', () => {
-    void extensionMessenger.sendMessage('openDashboard');
+    if (isExtensionContextInvalidated()) {
+      removeStaleBadge(el);
+      return;
+    }
+    extensionMessenger.sendMessage('openDashboard').catch(() => removeStaleBadge(el));
   });
   return el;
+}
+
+// After the extension is reloaded or updated, already-open tabs keep this script alive but its
+// runtime handle is dead; `runtime.id` becomes undefined and any message throws.
+function isExtensionContextInvalidated(): boolean {
+  try {
+    return !browser.runtime?.id;
+  } catch {
+    return true;
+  }
+}
+
+function removeStaleBadge(el: HTMLDivElement): void {
+  el.remove();
+  log('extension was reloaded — badge removed, reload the page to restore it');
 }
 
 function render(el: HTMLDivElement, snapshot: BadgeSnapshot | null): void {

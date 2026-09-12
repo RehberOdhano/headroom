@@ -5,6 +5,8 @@ import {
   daemonProjectDailyReportSchema,
   daemonSearchResponseSchema,
   daemonSessionsReportSchema,
+  gitActivityResponseSchema,
+  usagePatternsResponseSchema,
 } from './schemas.js';
 
 // Representative shapes, not real conversation content — hand-authored rather than captured,
@@ -93,5 +95,41 @@ describe('daemonSearchResponseSchema', () => {
 
   it('rejects a response missing hasMore (daemon pagination pre-dates this field)', () => {
     expect(daemonSearchResponseSchema.safeParse({ matches: [] }).success).toBe(false);
+  });
+});
+
+describe('usagePatternsResponseSchema', () => {
+  it('parses a full response with all four facets', () => {
+    const result = usagePatternsResponseSchema.safeParse({
+      skills: [{ name: 'code-review', count: 3 }],
+      commands: [{ name: '/compact', count: 1 }],
+      agents: [{ subagentType: 'Explore', count: 1, inputTokens: 50, outputTokens: 20 }],
+      mcpServers: [{ name: 'claude-in-chrome', count: 4 }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('defaults mcpServers to [] when the key is missing — a not-yet-restarted daemon predating this field', () => {
+    const result = usagePatternsResponseSchema.safeParse({
+      skills: [],
+      commands: [],
+      agents: [],
+      // no `mcpServers` key at all
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.mcpServers).toEqual([]);
+  });
+});
+
+describe('gitActivityResponseSchema', () => {
+  it('parses a full response', () => {
+    const result = gitActivityResponseSchema.safeParse({ isGitRepo: true, commitCount: 14 });
+    expect(result.success).toBe(true);
+  });
+
+  it('defaults both fields to false/0 when missing — a not-yet-restarted daemon predating this route', () => {
+    const result = gitActivityResponseSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toEqual({ isGitRepo: false, commitCount: 0 });
   });
 });

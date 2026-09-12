@@ -36,23 +36,23 @@ export function forecastBurnRate(history: TimedPercent[], now: Date = new Date()
   const run = sorted.slice(runStart);
   if (run.length < 2) return null;
 
-  const t0 = new Date(run[0]!.capturedAt).getTime();
-  const xs = run.map((point) => (new Date(point.capturedAt).getTime() - t0) / 3_600_000);
-  const ys = run.map((point) => point.percent);
-  const n = xs.length;
+  const runStartMs = new Date(run[0]!.capturedAt).getTime();
+  const hoursSinceStart = run.map((point) => (new Date(point.capturedAt).getTime() - runStartMs) / 3_600_000);
+  const percentValues = run.map((point) => point.percent);
+  const pointCount = hoursSinceStart.length;
 
-  const sumX = xs.reduce((a, x) => a + x, 0);
-  const sumY = ys.reduce((a, y) => a + y, 0);
-  const sumXY = xs.reduce((a, x, i) => a + x * ys[i]!, 0);
-  const sumXX = xs.reduce((a, x) => a + x * x, 0);
-  const denominator = n * sumXX - sumX * sumX;
-  const rate = denominator === 0 ? 0 : (n * sumXY - sumX * sumY) / denominator;
-  const intercept = (sumY - rate * sumX) / n;
+  const sumHours = hoursSinceStart.reduce((total, hours) => total + hours, 0);
+  const sumPercent = percentValues.reduce((total, percent) => total + percent, 0);
+  const sumHoursPercent = hoursSinceStart.reduce((total, hours, i) => total + hours * percentValues[i]!, 0);
+  const sumHoursSquared = hoursSinceStart.reduce((total, hours) => total + hours * hours, 0);
+  const denominator = pointCount * sumHoursSquared - sumHours * sumHours;
+  const rate = denominator === 0 ? 0 : (pointCount * sumHoursPercent - sumHours * sumPercent) / denominator;
+  const intercept = (sumPercent - rate * sumHours) / pointCount;
 
   let projectedFullAt: string | null = null;
   if (rate > 0) {
     const hoursToFull = (100 - intercept) / rate;
-    const projectedMs = t0 + hoursToFull * 3_600_000;
+    const projectedMs = runStartMs + hoursToFull * 3_600_000;
     const projectedDate = new Date(projectedMs);
     // A rate can be a genuine but tiny positive number (barely-moving usage), which pushes
     // hoursToFull — and so projectedMs — far outside Date's representable range (~year
@@ -63,9 +63,9 @@ export function forecastBurnRate(history: TimedPercent[], now: Date = new Date()
       !Number.isNaN(projectedDate.getTime()) && projectedMs > now.getTime() ? projectedDate.toISOString() : null;
   }
 
-  const spanHours = xs[n - 1]!;
+  const spanHours = hoursSinceStart[pointCount - 1]!;
   const confidence: BurnRateForecast['confidence'] =
-    n >= 5 && spanHours >= 1 ? 'high' : n >= 3 ? 'medium' : 'low';
+    pointCount >= 5 && spanHours >= 1 ? 'high' : pointCount >= 3 ? 'medium' : 'low';
 
   return { ratePercentPerHour: rate, projectedFullAt, confidence };
 }

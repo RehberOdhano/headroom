@@ -1,14 +1,18 @@
 import {
+  agentDefinitionSchema,
   daemonDailyReportSchema,
   daemonProjectDailyReportSchema,
   daemonModelAggregateResponseSchema,
   daemonSearchResponseSchema,
   daemonSessionsReportSchema,
+  usagePatternsResponseSchema,
   claudeConfigSnapshotSchema,
   claudeMdContentResponseSchema,
   claudeMdListResponseSchema,
+  gitActivityResponseSchema,
   knownProjectsResponseSchema,
   settingsLayerSchema,
+  type AgentDefinition,
   type ClaudeConfigSnapshot,
   type ClaudeMdFile,
   type DaemonDailyReport,
@@ -16,9 +20,11 @@ import {
   type DaemonProjectDailyReport,
   type DaemonSearchMatch,
   type DaemonSessionsReport,
+  type GitActivityResponse,
   type KnownProject,
   type PermissionEffect,
   type SettingsLayer,
+  type UsagePatterns,
 } from '@headroom/shared';
 import type { Settings } from './protocol.js';
 
@@ -94,6 +100,13 @@ export function getDaemonByModel(settings: Settings, params?: { since?: string; 
   return daemonFetch(settings, `/aggregate?by=model${toQuery(params, '&')}`, daemonModelAggregateResponseSchema);
 }
 
+/** Skill/slash-command frequency and per-subagent-type token totals — a separate call from the
+ *  three `/aggregate` facets above since it's sourced from raw session-transcript scanning
+ *  (packages/daemon/src/adapters/usage-patterns.ts), not ccusage's own aggregates. */
+export function getDaemonUsagePatterns(settings: Settings): Promise<DaemonResult<UsagePatterns>> {
+  return daemonFetch(settings, '/usage/patterns', usagePatternsResponseSchema);
+}
+
 export function searchDaemonSessions(
   settings: Settings,
   query: string,
@@ -131,6 +144,14 @@ export function getDaemonConfig(settings: Settings, projectDir?: string): Promis
   return daemonFetch(settings, `/config${query}`, claudeConfigSnapshotSchema);
 }
 
+export function getDaemonGitActivity(settings: Settings, projectDir: string, since: string): Promise<DaemonResult<GitActivityResponse>> {
+  return daemonFetch(
+    settings,
+    `/config/git-activity?projectDir=${encodeURIComponent(projectDir)}&since=${encodeURIComponent(since)}`,
+    gitActivityResponseSchema,
+  );
+}
+
 export function getDaemonClaudeMdList(settings: Settings, projectDir: string): Promise<DaemonResult<{ files: ClaudeMdFile[] }>> {
   return daemonFetch(settings, `/config/claude-md?projectDir=${encodeURIComponent(projectDir)}`, claudeMdListResponseSchema);
 }
@@ -162,6 +183,21 @@ export function updateDaemonClaudeMdContent(
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectDir, path: filePath, content }),
+  });
+}
+
+/** Sets a project-scope subagent's `model:` frontmatter field — the daemon only ever accepts a
+ *  `path` it can itself re-derive as a real `<projectDir>/.claude/agents/*.md` file
+ *  (`writeAgentModel`, packages/daemon/src/adapters/claude-config.ts), same guard as the
+ *  CLAUDE.md write above; a global agent's path is always rejected (404). */
+export function updateDaemonAgentModel(
+  settings: Settings,
+  { projectDir, path, model }: { projectDir: string; path: string; model: string },
+): Promise<DaemonResult<AgentDefinition>> {
+  return daemonFetch(settings, '/config/agents/model', agentDefinitionSchema, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectDir, path, model }),
   });
 }
 

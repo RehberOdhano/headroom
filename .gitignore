@@ -7,3 +7,8 @@ dist/
 coverage/
 *.tsbuildinfo
 store-assets/
+
+.claude/
+!packages/daemon/fixtures/**/.claude/
+/CLAUDE.md
+/packages/*/CLAUDE.md

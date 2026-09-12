@@ -59,7 +59,6 @@ describe('barColor', () => {
 });
 
 describe('describeForecast', () => {
-  const now = new Date('2026-08-29T12:00:00Z');
   const highConfidence: BurnRateForecast = {
     ratePercentPerHour: 10,
     projectedFullAt: '2026-08-29T18:00:00Z',
@@ -67,35 +66,58 @@ describe('describeForecast', () => {
   };
 
   it('returns null when there is no forecast', () => {
-    expect(describeForecast(null, null, now)).toBeNull();
+    expect(describeForecast(null, null)).toBeNull();
   });
 
   it('returns null when the bar is not on pace to hit 100%', () => {
     const flat: BurnRateForecast = { ratePercentPerHour: 0, projectedFullAt: null, confidence: 'high' };
-    expect(describeForecast(flat, null, now)).toBeNull();
+    expect(describeForecast(flat, null)).toBeNull();
   });
 
   it('flags at-risk when the projection lands before the reset', () => {
-    const result = describeForecast(highConfidence, '2026-08-29T20:00:00Z', now);
+    const result = describeForecast(highConfidence, '2026-08-29T20:00:00Z');
     expect(result?.atRisk).toBe(true);
     expect(result?.message).toContain('reaches limit');
   });
 
   it('does not flag at-risk when the reset comes first', () => {
-    const result = describeForecast(highConfidence, '2026-08-29T14:00:00Z', now);
+    const result = describeForecast(highConfidence, '2026-08-29T14:00:00Z');
     expect(result?.atRisk).toBe(false);
     expect(result?.message).toContain('resets first');
   });
 
   it('treats no known reset time as always at-risk', () => {
-    const result = describeForecast(highConfidence, null, now);
+    const result = describeForecast(highConfidence, null);
     expect(result?.atRisk).toBe(true);
   });
 
   it('notes low confidence in the message', () => {
     const low: BurnRateForecast = { ...highConfidence, confidence: 'low' };
-    const result = describeForecast(low, null, now);
+    const result = describeForecast(low, null);
     expect(result?.message).toContain('low confidence');
+  });
+
+  it('suggests a concrete action, with the time margin, when at-risk with a known reset', () => {
+    const result = describeForecast(highConfidence, '2026-08-29T20:00:00Z');
+    expect(result?.message).toContain('2h before reset');
+    expect(result?.message).toContain('lighter model');
+  });
+
+  it('suggests an action without a time margin when the reset time is unknown', () => {
+    const result = describeForecast(highConfidence, null);
+    expect(result?.message).toContain('lighter model');
+    expect(result?.message).not.toContain('before reset');
+  });
+
+  it('does not append a suggestion at low confidence', () => {
+    const low: BurnRateForecast = { ...highConfidence, confidence: 'low' };
+    const result = describeForecast(low, null);
+    expect(result?.message).not.toContain('lighter model');
+  });
+
+  it('does not append a suggestion when not at-risk', () => {
+    const result = describeForecast(highConfidence, '2026-08-29T14:00:00Z');
+    expect(result?.message).not.toContain('lighter model');
   });
 });
 

@@ -1,4 +1,4 @@
-import type { TimedPercent } from './history.js';
+import type { TimedPercent } from '@headroom/shared';
 
 export interface SparklinePoint {
   x: number;

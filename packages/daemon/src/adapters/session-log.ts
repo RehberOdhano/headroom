@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import type { DaemonSearchMatch, DaemonSearchResponse } from '@headroom/shared';
 
 /**
  * Reads Claude Code's raw per-session JSONL transcripts directly — the one thing ccusage
@@ -160,23 +161,6 @@ function readTranscriptLines(filePath: string): TranscriptLine[] {
   return lines;
 }
 
-export interface SessionSearchMatch {
-  sessionId: string;
-  /** The session's real working directory, read from the transcript itself. */
-  cwd: string | null;
-  matchCount: number;
-  /** First match, with ~40 chars of context on each side. */
-  snippet: string;
-  lastActivity: string | null;
-}
-
-export interface SessionSearchPage {
-  matches: SessionSearchMatch[];
-  /** True when more matches exist past this page's `offset + limit` — computed from the full
-   *  in-memory match list before slicing, so it's exact, not an "is this page full?" guess. */
-  hasMore: boolean;
-}
-
 /**
  * `offset`/`limit` paginate a search that always recomputes the full match list from every
  * session file on each call (no persisted index) — a real cost for a large history, but the
@@ -184,9 +168,9 @@ export interface SessionSearchPage {
  * across calls with the same query as long as no session file changes mid-pagination, which
  * is the same assumption unpaginated search already made.
  */
-export function searchSessions(claudeConfigDir: string, query: string, limit = 20, offset = 0): SessionSearchPage {
+export function searchSessions(claudeConfigDir: string, query: string, limit = 20, offset = 0): DaemonSearchResponse {
   const needle = query.toLowerCase();
-  const matches: SessionSearchMatch[] = [];
+  const matches: DaemonSearchMatch[] = [];
 
   for (const { sessionId, filePath } of findSessionFiles(claudeConfigDir)) {
     let matchCount = 0;

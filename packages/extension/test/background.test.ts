@@ -7,6 +7,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import backgroundDefinition from '../entrypoints/background.js';
 import { db } from '../lib/db.js';
 import { extensionMessenger } from '../lib/messaging.js';
+import { daemonSession, zeroTotals } from './helpers.js';
 
 const FIXTURES_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -184,6 +185,91 @@ describe('background', () => {
     });
   });
 
+  describe('prepaid credits poll', () => {
+    const POLL_ALARM_NAME = 'headroom-poll-usage';
+
+    function prepaidCreditsBody(expiresAt: string): Record<string, unknown> {
+      const body = loadUsageFixture('prepaid-credits.get.json') as {
+        promo_tranches: { expires_at: string }[];
+        next_expires_at: string;
+      };
+      body.promo_tranches[0]!.expires_at = expiresAt;
+      body.next_expires_at = expiresAt;
+      return body;
+    }
+
+    function mockPrepaidCredits(body: Record<string, unknown>) {
+      return vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        if (String(url).includes('/prepaid/credits')) {
+          return { ok: true, status: 200, json: async () => body } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      });
+    }
+
+    it('does nothing when no org id is known yet', async () => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/prepaid/credits'), expect.anything());
+    });
+
+    it('fetches and stores a normalized snapshot for the cached org id', async () => {
+      await db.meta.put({ key: 'orgId', value: 'org-123' });
+      const farFuture = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+      mockPrepaidCredits(prepaidCreditsBody(farFuture));
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(async () => {
+        const stored = await db.meta.get('prepaidCredits');
+        expect(stored).toBeDefined();
+        expect(JSON.parse(stored!.value)).toMatchObject({ balanceAmount: 38.11, currency: 'USD' });
+      });
+    });
+
+    it('fires a notification when the soonest promo tranche expires within 7 days', async () => {
+      await db.meta.put({ key: 'orgId', value: 'org-123' });
+      const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      mockPrepaidCredits(prepaidCreditsBody(soon));
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => {
+        const created = Object.values(fakeBrowser.notifications.getAllCreateOptions());
+        expect(created).toHaveLength(1);
+        expect(created[0]).toMatchObject({ title: expect.stringContaining('expiring soon') });
+      });
+    });
+
+    it('does not notify when the soonest promo tranche expires more than 7 days out', async () => {
+      await db.meta.put({ key: 'orgId', value: 'org-123' });
+      const farFuture = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const fetchMock = mockPrepaidCredits(prepaidCreditsBody(farFuture));
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(0);
+    });
+
+    it('does not re-notify for the same expiring tranche twice', async () => {
+      await db.meta.put({ key: 'orgId', value: 'org-123' });
+      const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      mockPrepaidCredits(prepaidCreditsBody(soon));
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await vi.waitFor(() => expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(1));
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(1);
+    });
+  });
+
   describe('attemptPairing', () => {
     it('POSTs /pair, stores the returned token, and reports paired: true', async () => {
       const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
@@ -228,6 +314,475 @@ describe('background', () => {
       const result = await extensionMessenger.sendMessage('attemptPairing');
 
       expect(result).toEqual({ paired: false, reason: 'unreachable' });
+    });
+  });
+
+  describe('daemon health check', () => {
+    const PAIR_ALARM_NAME = 'headroom-attempt-pairing';
+
+    beforeEach(async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        daemonToken: 'existing-token',
+        daemonUrl: 'http://127.0.0.1:4317',
+      });
+    });
+
+    it('returns null before any check has ever run', async () => {
+      expect(await extensionMessenger.sendMessage('getDaemonHealth')).toBeNull();
+    });
+
+    it('records a reachable check via the pairing alarm once already paired', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as Response);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: PAIR_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(async () => {
+        const health = await extensionMessenger.sendMessage('getDaemonHealth');
+        expect(health?.ok).toBe(true);
+      });
+    });
+
+    it('records unreachable when the daemon cannot be reached', async () => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: PAIR_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(async () => {
+        const health = await extensionMessenger.sendMessage('getDaemonHealth');
+        expect(health?.ok).toBe(false);
+      });
+    });
+
+    it('does not touch /health while still unpaired — the alarm only retries pairing', async () => {
+      await extensionMessenger.sendMessage('updateSettings', { daemonToken: '' });
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: PAIR_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:4317/pair', { method: 'POST' });
+      });
+      expect(await extensionMessenger.sendMessage('getDaemonHealth')).toBeNull();
+    });
+  });
+
+  describe('CLI budget alert', () => {
+    const POLL_ALARM_NAME = 'headroom-poll-usage';
+
+    beforeEach(async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        daemonToken: 'existing-token',
+        daemonUrl: 'http://127.0.0.1:4317',
+      });
+    });
+
+    function mockDailyCost(cost: number) {
+      return vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) {
+          return { ok: true, status: 200, json: async () => ({ daily: [], totals: { ...zeroTotals, totalCost: cost } }) } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      });
+    }
+
+    it('fires a notification once this month\'s CLI spend reaches the configured budget', async () => {
+      await extensionMessenger.sendMessage('updateSettings', { cliMonthlyBudget: 50 });
+      mockDailyCost(52.5);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => {
+        const created = Object.values(fakeBrowser.notifications.getAllCreateOptions());
+        expect(created).toHaveLength(1);
+        expect(created[0]).toMatchObject({ title: expect.stringContaining('budget') });
+      });
+    });
+
+    it('does not notify while spend stays under the budget', async () => {
+      await extensionMessenger.sendMessage('updateSettings', { cliMonthlyBudget: 50 });
+      const fetchMock = mockDailyCost(10);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(0);
+    });
+
+    it('does not fetch anything when no budget is configured (the default)', async () => {
+      const fetchMock = mockDailyCost(999);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/aggregate'), expect.anything());
+    });
+
+    it('does not re-notify for the same calendar month once already alerted', async () => {
+      await extensionMessenger.sendMessage('updateSettings', { cliMonthlyBudget: 50 });
+      mockDailyCost(60);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await vi.waitFor(() => expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(1));
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(1);
+    });
+  });
+
+  describe('per-project CLI budget alert', () => {
+    const POLL_ALARM_NAME = 'headroom-poll-usage';
+
+    beforeEach(async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        daemonToken: 'existing-token',
+        daemonUrl: 'http://127.0.0.1:4317',
+      });
+    });
+
+    function mockByProjectCost(slug: string, cost: number) {
+      return vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=project')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              projects: { [slug]: [{ ...zeroTotals, totalCost: cost, date: '2026-08-01', modelBreakdowns: [], modelsUsed: [] }] },
+              totals: zeroTotals,
+            }),
+          } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      });
+    }
+
+    it('fires once a specific project\'s CLI spend crosses its own budget', async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        perProjectCliBudgets: [{ projectDir: '/Users/x/riverpoint', monthlyBudget: 20 }],
+      });
+      mockByProjectCost('-Users-x-riverpoint', 25);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => {
+        const created = Object.values(fakeBrowser.notifications.getAllCreateOptions());
+        expect(created).toHaveLength(1);
+        expect(created[0]).toMatchObject({ title: expect.stringContaining('project CLI budget') });
+        expect(created[0]?.message).toContain('/Users/x/riverpoint');
+      });
+    });
+
+    it('does not notify while a project stays under its own budget', async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        perProjectCliBudgets: [{ projectDir: '/Users/x/riverpoint', monthlyBudget: 20 }],
+      });
+      const fetchMock = mockByProjectCost('-Users-x-riverpoint', 5);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(0);
+    });
+
+    it('does not notify when the response has no data for that project\'s slug', async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        perProjectCliBudgets: [{ projectDir: '/Users/x/riverpoint', monthlyBudget: 20 }],
+      });
+      const fetchMock = mockByProjectCost('-Users-x-someone-else', 999);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(0);
+    });
+
+    it('does not fetch anything with no per-project budgets configured (the default)', async () => {
+      const fetchMock = mockByProjectCost('-anything', 999);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/aggregate?by=project'), expect.anything());
+    });
+  });
+
+  describe('session anomaly alert', () => {
+    const POLL_ALARM_NAME = 'headroom-poll-usage';
+
+    beforeEach(async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        daemonToken: 'existing-token',
+        daemonUrl: 'http://127.0.0.1:4317',
+      });
+    });
+
+    function mockSessions(sessions: unknown[]) {
+      return vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/sessions')) {
+          return { ok: true, status: 200, json: async () => ({ sessions, totals: zeroTotals }) } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      });
+    }
+
+    it('fires once for a session whose cost is far above the rest', async () => {
+      mockSessions([
+        daemonSession({ sessionId: 'a', totalCost: 1 }),
+        daemonSession({ sessionId: 'b', totalCost: 1.2 }),
+        daemonSession({ sessionId: 'c', totalCost: 20, projectPath: '-Users-x-riverpoint' }),
+      ]);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => {
+        const created = Object.values(fakeBrowser.notifications.getAllCreateOptions());
+        expect(created).toHaveLength(1);
+        expect(created[0]).toMatchObject({ title: expect.stringContaining('unusually high') });
+        expect(created[0]?.message).toContain('-Users-x-riverpoint');
+      });
+    });
+
+    it('does not re-notify for the same session on a later tick', async () => {
+      mockSessions([
+        daemonSession({ sessionId: 'a', totalCost: 1 }),
+        daemonSession({ sessionId: 'b', totalCost: 1.2 }),
+        daemonSession({ sessionId: 'c', totalCost: 20 }),
+      ]);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await vi.waitFor(() => expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(1));
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(1);
+    });
+
+    it('does not notify when every session costs about the same', async () => {
+      const fetchMock = mockSessions([daemonSession({ sessionId: 'a', totalCost: 1 }), daemonSession({ sessionId: 'b', totalCost: 1.1 })]);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(0);
+    });
+  });
+
+  describe('attention badge', () => {
+    const POLL_ALARM_NAME = 'headroom-poll-usage';
+
+    it('clears the badge when the daemon is not configured', async () => {
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(async () => {
+        expect(await fakeBrowser.action.getBadgeText({})).toBe('');
+      });
+    });
+
+    it('counts sessions nearing the retention cleanup window', async () => {
+      await extensionMessenger.sendMessage('updateSettings', { daemonToken: 'existing-token', daemonUrl: 'http://127.0.0.1:4317' });
+      const nearlyExpired = new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString(); // ~3 days left of 30
+
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/sessions')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              sessions: [
+                {
+                  cacheCreationTokens: 0,
+                  cacheReadTokens: 0,
+                  firstActivity: nearlyExpired,
+                  inputTokens: 0,
+                  lastActivity: nearlyExpired,
+                  modelBreakdowns: [],
+                  modelsUsed: [],
+                  outputTokens: 0,
+                  projectPath: '-fixture-project',
+                  sessionId: 's1',
+                  totalCost: 1,
+                  totalTokens: 100,
+                },
+              ],
+              totals: zeroTotals,
+            }),
+          } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      });
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(async () => {
+        expect(await fakeBrowser.action.getBadgeText({})).toBe('1');
+      });
+    });
+  });
+
+  describe('quiet hours', () => {
+    const POLL_ALARM_NAME = 'headroom-poll-usage';
+
+    // Brackets the *real* current hour rather than faking the clock — this file's own history
+    // notes fake timers can hang vi.waitFor's internal polling, so window bounds are computed
+    // relative to wall-clock time instead.
+    function quietWindowCoveringNow(): { quietHoursStart: number; quietHoursEnd: number } {
+      const hour = new Date().getHours();
+      return { quietHoursStart: hour, quietHoursEnd: (hour + 2) % 24 };
+    }
+
+    it('suppresses a CLI budget alert during quiet hours but does not lose it — it fires on the next check once quiet hours end', async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        daemonToken: 'existing-token',
+        daemonUrl: 'http://127.0.0.1:4317',
+        cliMonthlyBudget: 50,
+        quietHoursEnabled: true,
+        ...quietWindowCoveringNow(),
+      });
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) {
+          return { ok: true, status: 200, json: async () => ({ daily: [], totals: { ...zeroTotals, totalCost: 60 } }) } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      });
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(0);
+
+      // Quiet hours off now — the same crossing (never marked as alerted) fires this time.
+      await extensionMessenger.sendMessage('updateSettings', { quietHoursEnabled: false });
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => {
+        expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(1);
+      });
+    });
+
+    it('does not suppress anything when disabled (the default)', async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        daemonToken: 'existing-token',
+        daemonUrl: 'http://127.0.0.1:4317',
+        cliMonthlyBudget: 50,
+        quietHoursEnabled: false,
+      });
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) {
+          return { ok: true, status: 200, json: async () => ({ daily: [], totals: { ...zeroTotals, totalCost: 60 } }) } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      });
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => {
+        expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(1);
+      });
+    });
+  });
+
+  describe('weekly digest', () => {
+    const POLL_ALARM_NAME = 'headroom-poll-usage';
+
+    it('does not fire when disabled (the default)', async () => {
+      await db.limitSnapshots.add({
+        capturedAt: new Date().toISOString(),
+        source: 'usage',
+        session: { percent: 40, resetsAt: new Date().toISOString(), severity: 'normal', isActive: true },
+        weekly: { percent: 20, resetsAt: new Date().toISOString(), severity: 'normal', isActive: true },
+      });
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(0);
+    });
+
+    it('fires with the past week\'s peak percentages once enabled, using only local data with no daemon configured', async () => {
+      await extensionMessenger.sendMessage('updateSettings', { weeklyDigestEnabled: true });
+      await db.limitSnapshots.add({
+        capturedAt: new Date().toISOString(),
+        source: 'usage',
+        session: { percent: 73, resetsAt: new Date().toISOString(), severity: 'warning', isActive: true },
+        weekly: { percent: 41, resetsAt: new Date().toISOString(), severity: 'normal', isActive: true },
+      });
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => {
+        const created = Object.values(fakeBrowser.notifications.getAllCreateOptions());
+        expect(created).toHaveLength(1);
+        expect(created[0]?.message).toContain('Peak session: 73%');
+        expect(created[0]?.message).toContain('Peak weekly: 41%');
+        expect(created[0]?.message).not.toContain('CLI:');
+      });
+    });
+
+    it('appends a CLI tokens/cost line when the daemon is configured', async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        weeklyDigestEnabled: true,
+        daemonToken: 'existing-token',
+        daemonUrl: 'http://127.0.0.1:4317',
+      });
+      await db.limitSnapshots.add({
+        capturedAt: new Date().toISOString(),
+        source: 'usage',
+        session: { percent: 30, resetsAt: new Date().toISOString(), severity: 'normal', isActive: true },
+        weekly: { percent: 15, resetsAt: new Date().toISOString(), severity: 'normal', isActive: true },
+      });
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ daily: [], totals: { totalTokens: 12000, totalCost: 3.5, inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } }),
+          } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      });
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(() => {
+        const created = Object.values(fakeBrowser.notifications.getAllCreateOptions());
+        expect(created).toHaveLength(1);
+        expect(created[0]?.message).toContain('CLI: 12.0K tokens, $3.50');
+      });
+    });
+
+    it('does not fire twice within the same 7-day window', async () => {
+      await extensionMessenger.sendMessage('updateSettings', { weeklyDigestEnabled: true });
+      await db.limitSnapshots.add({
+        capturedAt: new Date().toISOString(),
+        source: 'usage',
+        session: { percent: 10, resetsAt: new Date().toISOString(), severity: 'normal', isActive: true },
+        weekly: { percent: 5, resetsAt: new Date().toISOString(), severity: 'normal', isActive: true },
+      });
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await vi.waitFor(() => expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(1));
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(1);
+    });
+
+    it('does not fire when there is no snapshot data yet, even if enabled', async () => {
+      await extensionMessenger.sendMessage('updateSettings', { weeklyDigestEnabled: true });
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: POLL_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(Object.keys(fakeBrowser.notifications.getAllCreateOptions())).toHaveLength(0);
     });
   });
 

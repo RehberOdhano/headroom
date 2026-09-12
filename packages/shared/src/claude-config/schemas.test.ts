@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  agentDefinitionSchema,
   claudeConfigSnapshotSchema,
   claudeMdContentResponseSchema,
   claudeMdListResponseSchema,
@@ -35,11 +36,25 @@ describe('claudeConfigSnapshotSchema', () => {
       local: null,
       hooks: [],
       skills: [],
+      agents: [],
     });
     expect(result.success).toBe(true);
   });
 
-  it('parses a full snapshot with hooks and skills', () => {
+  it('defaults agents to [] when the key is missing entirely — a not-yet-restarted daemon\'s response, since it only picks up a new field on restart, not on disk change', () => {
+    const result = claudeConfigSnapshotSchema.safeParse({
+      global: emptyLayer,
+      project: null,
+      local: null,
+      hooks: [],
+      skills: [],
+      // no `agents` key at all
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.agents).toEqual([]);
+  });
+
+  it('parses a full snapshot with hooks, skills, and agents', () => {
     const result = claudeConfigSnapshotSchema.safeParse({
       global: emptyLayer,
       project: { ...emptyLayer, path: '/project/.claude/settings.json', exists: true },
@@ -63,8 +78,41 @@ describe('claudeConfigSnapshotSchema', () => {
           path: '/project/.claude/skills/adr/SKILL.md',
         },
       ],
+      agents: [
+        {
+          name: 'reviewer',
+          description: 'Reviews a diff against a spec.',
+          model: 'inherit',
+          path: '/project/.claude/agents/reviewer.md',
+          scope: 'project',
+        },
+      ],
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('agentDefinitionSchema', () => {
+  it('parses an agent with no model set', () => {
+    const result = agentDefinitionSchema.safeParse({
+      name: 'reviewer',
+      description: 'Reviews a diff against a spec.',
+      model: null,
+      path: '/project/.claude/agents/reviewer.md',
+      scope: 'project',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a scope outside project/global', () => {
+    const result = agentDefinitionSchema.safeParse({
+      name: 'reviewer',
+      description: '',
+      model: null,
+      path: '/project/.claude/agents/reviewer.md',
+      scope: 'org-wide',
+    });
+    expect(result.success).toBe(false);
   });
 });
 

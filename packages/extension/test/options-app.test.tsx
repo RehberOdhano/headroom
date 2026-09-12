@@ -87,6 +87,34 @@ describe('options App', () => {
     expect(content).not.toContain('should-be-redacted');
   });
 
+  it('shows a setup checklist flagging what is still missing on a fresh install', async () => {
+    render(<App />);
+
+    expect(await screen.findByText(/Setup status \(0\/3\)/)).toBeTruthy();
+    expect(screen.getByText(/Visited claude.ai once/)).toBeTruthy();
+    expect(screen.getByText(/First usage snapshot captured/)).toBeTruthy();
+    expect(screen.getByText(/Local daemon paired/)).toBeTruthy();
+    // Not paired yet, so "Daemon reachable right now" shouldn't even be listed.
+    expect(screen.queryByText(/Daemon reachable right now/)).toBeNull();
+  });
+
+  it('hides the setup checklist entirely once everything is done', async () => {
+    await db.meta.put({ key: 'orgId', value: 'org-1' });
+    await db.limitSnapshots.add({
+      capturedAt: '2026-08-26T17:20:00Z',
+      source: 'usage',
+      session: { percent: 10, resetsAt: '2026-08-27T00:00:00Z', severity: 'normal', isActive: true },
+      weekly: { percent: 10, resetsAt: '2026-09-01T00:00:00Z', severity: 'normal', isActive: true },
+    });
+    await extensionMessenger.sendMessage('updateSettings', { daemonToken: 'existing-token', daemonUrl: 'http://127.0.0.1:4317' });
+    await db.meta.put({ key: 'daemonHealth', value: JSON.stringify({ ok: true, checkedAt: new Date().toISOString() }) });
+
+    render(<App />);
+
+    await screen.findByText('Settings');
+    expect(screen.queryByText(/Setup status/)).toBeNull();
+  });
+
   it('shows default settings values', async () => {
     render(<App />);
 
@@ -110,7 +138,7 @@ describe('options App', () => {
 
     fireEvent.click(checkbox);
 
-    await screen.findByRole('checkbox', { checked: false });
+    await vi.waitFor(() => expect(checkbox.checked).toBe(false));
     expect((await extensionMessenger.sendMessage('getSettings')).badgeEnabled).toBe(false);
   });
 
@@ -122,6 +150,56 @@ describe('options App', () => {
 
     await vi.waitFor(async () => {
       expect((await extensionMessenger.sendMessage('getSettings')).snapshotRetentionDays).toBe(30);
+    });
+  });
+
+  it('toggling the weekly digest checkbox persists the change', async () => {
+    render(<App />);
+    const checkbox = (await screen.findByLabelText(/Send me a weekly usage digest/)) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+
+    fireEvent.click(checkbox);
+
+    await vi.waitFor(async () => {
+      expect((await extensionMessenger.sendMessage('getSettings')).weeklyDigestEnabled).toBe(true);
+    });
+  });
+
+  it('setting a CLI monthly budget persists it, and clearing the field disables it again', async () => {
+    render(<App />);
+    const input = await screen.findByLabelText(/Alert me if CLI spend this month exceeds/);
+
+    fireEvent.change(input, { target: { value: '25' } });
+    await vi.waitFor(async () => {
+      expect((await extensionMessenger.sendMessage('getSettings')).cliMonthlyBudget).toBe(25);
+    });
+
+    fireEvent.change(input, { target: { value: '' } });
+    await vi.waitFor(async () => {
+      expect((await extensionMessenger.sendMessage('getSettings')).cliMonthlyBudget).toBeNull();
+    });
+  });
+
+  it('enabling quiet hours reveals the from/until fields, hidden by default, and persists changes to them', async () => {
+    render(<App />);
+    const checkbox = (await screen.findByLabelText(/Don't notify me during quiet hours/)) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    expect(screen.queryByLabelText('From')).toBeNull();
+
+    fireEvent.click(checkbox);
+    await vi.waitFor(async () => {
+      expect((await extensionMessenger.sendMessage('getSettings')).quietHoursEnabled).toBe(true);
+    });
+
+    const fromSelect = (await screen.findByLabelText('From')) as HTMLSelectElement;
+    const untilSelect = (await screen.findByLabelText('Until')) as HTMLSelectElement;
+    fireEvent.change(fromSelect, { target: { value: '23' } });
+    fireEvent.change(untilSelect, { target: { value: '7' } });
+
+    await vi.waitFor(async () => {
+      const settings = await extensionMessenger.sendMessage('getSettings');
+      expect(settings.quietHoursStart).toBe(23);
+      expect(settings.quietHoursEnd).toBe(7);
     });
   });
 
@@ -192,6 +270,24 @@ describe('options App', () => {
 
     expect(await screen.findByText('Connected automatically')).toBeTruthy();
     expect((await extensionMessenger.sendMessage('getSettings')).daemonToken).toBe('auto-paired-token');
+  });
+
+  it('shows the daemon liveness status once paired and a health check has run', async () => {
+    await extensionMessenger.sendMessage('updateSettings', { daemonToken: 'existing-token', daemonUrl: 'http://127.0.0.1:4317' });
+    await db.meta.put({ key: 'daemonHealth', value: JSON.stringify({ ok: true, checkedAt: new Date().toISOString() }) });
+
+    render(<App />);
+
+    expect(await screen.findByText(/Daemon reachable, checked/)).toBeTruthy();
+  });
+
+  it('shows the daemon as unreachable when the last background health check failed', async () => {
+    await extensionMessenger.sendMessage('updateSettings', { daemonToken: 'existing-token', daemonUrl: 'http://127.0.0.1:4317' });
+    await db.meta.put({ key: 'daemonHealth', value: JSON.stringify({ ok: false, checkedAt: new Date().toISOString() }) });
+
+    render(<App />);
+
+    expect(await screen.findByText(/Daemon unreachable/)).toBeTruthy();
   });
 
   it('clicking "Check now" shows the already-paired hint when the daemon rejects it', async () => {

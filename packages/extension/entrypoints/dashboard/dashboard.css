@@ -226,8 +226,13 @@ body {
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
+  margin-top: var(--space-4);
   margin-bottom: var(--space-4);
   flex-wrap: wrap;
+}
+
+.card-header:first-child {
+  margin-top: 0;
 }
 
 .card-title {
@@ -339,6 +344,82 @@ body {
   padding-left: calc(2.6rem + var(--space-2));
 }
 
+/* Weekly CLI-vs-chat split chart (CLI Attribution overview) */
+.stacked-bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  height: 100px;
+  padding: 0 var(--space-1);
+}
+
+.stacked-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.stacked-bar {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+  max-width: 28px;
+  height: 100%;
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+  background: var(--color-bg-subtle);
+}
+
+.stacked-bar-segment {
+  width: 100%;
+}
+
+.stacked-bar-cli {
+  background: var(--color-accent);
+}
+
+.stacked-bar-other {
+  background: var(--color-text-faint);
+  opacity: 0.5;
+}
+
+.stacked-bar-label {
+  font-size: 0.68rem;
+  color: var(--color-text-faint);
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.stacked-bar-legend {
+  display: flex;
+  gap: var(--space-4);
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  margin-top: var(--space-2);
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.legend-swatch-cli {
+  background: var(--color-accent);
+}
+
+.legend-swatch-other {
+  background: var(--color-text-faint);
+  opacity: 0.5;
+}
+
 /* Forecast line */
 .forecast-line {
   display: flex;
@@ -362,13 +443,17 @@ body {
 /* Buttons */
 .btn {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
   border: 1px solid var(--color-border-strong);
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 500;
-  padding: 7px 14px;
+  padding: 0 14px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
@@ -492,9 +577,10 @@ body {
 
 .search-input {
   flex: 1;
+  height: 36px;
   font: inherit;
   font-size: 0.88rem;
-  padding: 8px 12px;
+  padding: 0 12px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
   background: var(--color-bg);
@@ -571,6 +657,13 @@ body {
   font-size: 0.75rem;
   color: var(--color-text-muted);
   margin-top: 2px !important;
+}
+
+.anomaly-marker {
+  font-family: var(--font-sans, inherit);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-warning);
 }
 
 /* Guardrails (permissions/hooks/skills/CLAUDE.md) */
@@ -702,6 +795,58 @@ body {
 .project-picker-row > .select-wrap {
   flex: 1 1 320px;
   min-width: 200px;
+}
+
+/* "Set monthly spend limit" block (Guardrails > Project usage) — mirrors claude.ai's own Usage
+   settings spend-limit page: bold title, one-line description, a big full-width input, small
+   caption below. Deliberately more spacious than this dashboard's usual compact rows since it's
+   directly modeled on that reference. */
+.spend-limit-block {
+  margin-top: var(--space-2);
+}
+
+.spend-limit-title {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin-bottom: var(--space-2);
+}
+
+.spend-limit-input-wrap {
+  position: relative;
+  margin: var(--space-3) 0;
+}
+
+.spend-limit-prefix {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  pointer-events: none;
+}
+
+.spend-limit-input {
+  width: 100%;
+  height: 44px;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0 14px 0 28px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.spend-limit-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-bg);
+}
+
+.spend-limit-caption {
+  margin: 0;
 }
 
 .project-picker-advanced {
@@ -863,6 +1008,21 @@ body {
 
 .rules-scroll {
   max-height: 420px;
+}
+
+/* Project Health's project list: same "capped height + scroll" reasoning as the layer/hooks/
+   skills/rules boxes above — this daemon's project count only grows over a machine's lifetime,
+   so without a cap the table would eventually push every other Guardrails section off-screen.
+   Sticky header for the same reason `.rules-table` has one: column labels stay visible while
+   scrolling a long list, and it's harmless on a list short enough not to scroll at all. */
+.project-health-scroll {
+  max-height: 320px;
+}
+
+.project-health-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 /* Known-risky-commands table: content wraps instead of the data-table default nowrap, since a

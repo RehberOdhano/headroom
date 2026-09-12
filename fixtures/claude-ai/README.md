@@ -10,6 +10,7 @@ Full narrative and findings: `docs/discovery/claude-ai-endpoints.md`.
 | `message_limit.overage.sse.txt` | `POST .../chat_conversations/{id}/completion` (SSE) | 2026-08-26T17:23:32Z | overage |
 | `message_limit.five_hour.sse.txt` | same | 2026-08-29T09:28:30Z | credits disabled (same account, 3 days later) |
 | `code.rate-limit-event.json` | `GET /v1/code/sessions/{id}/events` (claude.ai/code) | 2026-09-04T18:15:02Z | not in overage |
+| `prepaid-credits.get.json` | `GET /api/organizations/{org_id}/prepaid/credits` | 2026-09-12T00:00:00Z | has an active promotional credit grant |
 
 Each file's own `_fixture_meta` (JSON) or header comment (SSE) lists exactly what in it is
 unverified — check that before writing a schema or test against it. The two pairs are from the
