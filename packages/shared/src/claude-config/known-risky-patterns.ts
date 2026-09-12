@@ -1,9 +1,9 @@
 /**
  * A small, bundled, offline list of common risky Claude Code permission patterns — surfaced in
  * the extension's Guardrails tab as quick-toggle suggestions. Deliberately not sourced from the
- * internet at runtime (root CLAUDE.md section 9: no external network calls from either package).
- * Pattern syntax (`Tool(subpattern)` / bare tool name) confirmed against a real project's
- * `permissions.allow/ask/deny` arrays, not guessed.
+ * internet at runtime: neither package makes external network calls. Pattern syntax
+ * (`Tool(subpattern)` / bare tool name) matches a real project's `permissions.allow/ask/deny`
+ * arrays.
  */
 
 export interface KnownRiskyPattern {

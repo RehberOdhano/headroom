@@ -9,11 +9,7 @@ export interface ForecastMessage {
 
 /** Turns a raw burn-rate forecast into UI copy, or null if there's nothing worth showing (no
  *  forecast, or the bar isn't currently on pace to hit 100% at all). */
-export function describeForecast(
-  forecast: BurnRateForecast | null,
-  resetsAt: string | null,
-  now: Date = new Date(),
-): ForecastMessage | null {
+export function describeForecast(forecast: BurnRateForecast | null, resetsAt: string | null): ForecastMessage | null {
   if (!forecast || !forecast.projectedFullAt) return null;
 
   const projected = new Date(forecast.projectedFullAt);
@@ -24,13 +20,33 @@ export function describeForecast(
     minute: '2-digit',
   });
   const confidenceNote = forecast.confidence === 'low' ? ' (low confidence)' : '';
+  // A concrete next step, not just a warning — how much earlier than reset, and what to do
+  // about it. Skipped at low confidence: too few points to justify telling someone to change
+  // how they work off of it.
+  const suggestion =
+    atRisk && forecast.confidence !== 'low'
+      ? resetsAt
+        ? ` — that's ${formatHoursEarly(new Date(resetsAt).getTime() - projected.getTime())} before reset. Switching to a lighter model or pacing back would stretch it.`
+        : ' Switching to a lighter model or pacing back would stretch it.'
+      : '';
 
   return {
     atRisk,
     message: atRisk
-      ? `At current pace, reaches limit ~${when}${confidenceNote}`
+      ? `At current pace, reaches limit ~${when}${confidenceNote}${suggestion}`
       : `On pace for ~${when}, but resets first${confidenceNote}`,
   };
+}
+
+/** "3h" / "45m" — for the "that's Nh before reset" clause above; never negative since it's only
+ *  ever called when the projection lands before the reset. */
+function formatHoursEarly(diffMs: number): string {
+  const totalMinutes = Math.round(diffMs / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
 }
 
 /**
@@ -82,6 +98,14 @@ export function barColor(severity: string): string {
 export function formatPercent(percent: number): string {
   const rounded = Math.round(percent * 10) / 10;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+/** "1.2K" / "3.4M" / "42" — shared by the CLI attribution dashboard and the background worker's
+ *  notification text (weekly digest), so both read consistently. */
+export function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
 }
 
 /**

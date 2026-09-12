@@ -4,8 +4,7 @@ import { z } from 'zod';
  * Validates the local daemon's `/config*` HTTP JSON responses (`GET /config`,
  * `/config/projects`, `/config/claude-md`, `/config/claude-md/content`) — Claude Code's own
  * local configuration (permission rules, hooks, skills, CLAUDE.md docs), not usage data. A
- * distinct contract from `../daemon/schemas.ts` (ccusage-derived usage/session data), following
- * the same "every inbound payload gets a zod schema" rule (root CLAUDE.md section 5).
+ * distinct contract from `../daemon/schemas.ts` (ccusage-derived usage/session data).
  */
 
 export const permissionEffectSchema = z.enum(['allow', 'ask', 'deny']);
@@ -42,12 +41,32 @@ export const skillSummarySchema = z.object({
   path: z.string(),
 });
 
+/** A subagent definition's model routing (`<projectDir>/.claude/agents/*.md` or
+ *  `<claudeConfigDir>/agents/*.md`) — `model` is whatever the frontmatter's `model:` field says
+ *  verbatim (`inherit`, `opus`, `sonnet`, `haiku`, a full model id, or absent/null), never
+ *  interpreted or defaulted here. `scope` distinguishes a project's own agents (editable) from
+ *  global personal ones (shown read-only) — writes never touch shared/global config. */
+export const agentDefinitionSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  model: z.string().nullable(),
+  path: z.string(),
+  scope: z.enum(['project', 'global']),
+});
+
 export const claudeConfigSnapshotSchema = z.object({
   global: settingsLayerSchema,
   project: settingsLayerSchema.nullable(),
   local: settingsLayerSchema.nullable(),
   hooks: z.array(hookEntrySchema),
   skills: z.array(skillSummarySchema),
+  // `.default([])`, not a bare required array: the daemon is a long-running process that only
+  // picks up a code change on restart (`launchctl kickstart ...`), so an extension rebuilt with
+  // a newer shared schema will otherwise briefly talk to an older daemon whose response has no
+  // `agents` key at all — that mismatch surfaced for real as "Daemon response did not match the
+  // expected shape" across the *whole* Guardrails snapshot (permissions/hooks/skills included),
+  // not just the new field. Defaulting keeps that skew from taking down everything else.
+  agents: z.array(agentDefinitionSchema).default([]),
 });
 
 export const knownProjectSchema = z.object({
@@ -77,6 +96,7 @@ export type PermissionRule = z.infer<typeof permissionRuleSchema>;
 export type SettingsLayer = z.infer<typeof settingsLayerSchema>;
 export type HookEntry = z.infer<typeof hookEntrySchema>;
 export type SkillSummary = z.infer<typeof skillSummarySchema>;
+export type AgentDefinition = z.infer<typeof agentDefinitionSchema>;
 export type ClaudeConfigSnapshot = z.infer<typeof claudeConfigSnapshotSchema>;
 export type KnownProject = z.infer<typeof knownProjectSchema>;
 export type ClaudeMdFile = z.infer<typeof claudeMdFileSchema>;

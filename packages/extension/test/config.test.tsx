@@ -7,16 +7,14 @@ import backgroundDefinition from '../entrypoints/background.js';
 import { ConfigTab } from '../entrypoints/dashboard/Config.tsx';
 import { db } from '../lib/db.js';
 import { extensionMessenger } from '../lib/messaging.js';
-
-function jsonResponse(body: unknown): Response {
-  return { ok: true, status: 200, json: async () => body } as Response;
-}
+import { jsonResponse, zeroTotals } from './helpers.js';
 
 const emptyLayer = (path: string) => ({ path, exists: false, defaultMode: null, allow: [], ask: [], deny: [] });
 
 describe('ConfigTab', () => {
   beforeEach(async () => {
     fakeBrowser.reset();
+    await db.configFingerprints.clear();
     await db.rawRecords.clear();
     await db.limitSnapshots.clear();
     await db.meta.clear();
@@ -53,6 +51,7 @@ describe('ConfigTab', () => {
             local: null,
             hooks: [{ event: 'Stop', matcher: null, command: 'echo hi', timeout: null, statusMessage: null, source: '/home/.claude/settings.json' }],
             skills: [{ name: 'demo', description: 'A demo skill.', argumentHint: null, allowedTools: null, path: '/home/.claude/skills/demo/SKILL.md' }],
+            agents: [],
           });
         }
         throw new Error(`unexpected fetch: ${requested}`);
@@ -85,6 +84,7 @@ describe('ConfigTab', () => {
               { name: 'adr', description: 'Record an architecture decision.', argumentHint: null, allowedTools: null, path: '/x/adr/SKILL.md' },
               { name: 'review', description: 'Do a code review.', argumentHint: null, allowedTools: null, path: '/x/review/SKILL.md' },
             ],
+            agents: [],
           });
         }
         throw new Error(`unexpected fetch: ${requested}`);
@@ -127,6 +127,7 @@ describe('ConfigTab', () => {
             local: emptyLayer('/Users/you/app/.claude/settings.local.json'),
             hooks: [],
             skills: [],
+            agents: [],
           });
         }
         throw new Error(`unexpected fetch: ${requested}`);
@@ -167,6 +168,353 @@ describe('ConfigTab', () => {
       });
     });
 
+    it('shows tokens/cost-per-commit once a project has both git and CLI activity', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/config/projects')) return jsonResponse({ projects: [{ path: '/Users/you/app', lastActivity: null }] });
+        if (requested.includes('/config/claude-md')) return jsonResponse({ files: [] });
+        if (requested.includes('/config/git-activity')) return jsonResponse({ isGitRepo: true, commitCount: 4 });
+        if (requested.includes('/aggregate?by=project')) {
+          return jsonResponse({
+            projects: { '-Users-you-app': [{ ...zeroTotals, totalCost: 20, date: '2026-08-01', modelBreakdowns: [], modelsUsed: [] }] },
+            totals: zeroTotals,
+          });
+        }
+        if (requested.includes('/config')) {
+          return jsonResponse({
+            global: emptyLayer('/home/.claude/settings.json'),
+            project: emptyLayer('/Users/you/app/.claude/settings.json'),
+            local: emptyLayer('/Users/you/app/.claude/settings.local.json'),
+            hooks: [],
+            skills: [],
+            agents: [],
+          });
+        }
+        throw new Error(`unexpected fetch: ${requested}`);
+      });
+
+      render(<ConfigTab />);
+      await screen.findByText('No hooks configured in any layer.');
+      await screen.findByRole('option', { name: '/Users/you/app' });
+      fireEvent.change(screen.getByDisplayValue('Global only — no project selected'), { target: { value: '/Users/you/app' } });
+
+      expect(await screen.findByText(/\$5\.00 \/ commit this month/)).toBeTruthy();
+      expect(screen.getByText(/4 commits, \$20\.00 total/)).toBeTruthy();
+    });
+
+    it('hides the per-commit stat when the project is not a git repo', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/config/projects')) return jsonResponse({ projects: [{ path: '/Users/you/app', lastActivity: null }] });
+        if (requested.includes('/config/claude-md')) return jsonResponse({ files: [] });
+        if (requested.includes('/config/git-activity')) return jsonResponse({ isGitRepo: false, commitCount: 0 });
+        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: {}, totals: {} });
+        if (requested.includes('/config')) {
+          return jsonResponse({
+            global: emptyLayer('/home/.claude/settings.json'),
+            project: emptyLayer('/Users/you/app/.claude/settings.json'),
+            local: emptyLayer('/Users/you/app/.claude/settings.local.json'),
+            hooks: [],
+            skills: [],
+            agents: [],
+          });
+        }
+        throw new Error(`unexpected fetch: ${requested}`);
+      });
+
+      render(<ConfigTab />);
+      await screen.findByText('No hooks configured in any layer.');
+      await screen.findByRole('option', { name: '/Users/you/app' });
+      fireEvent.change(screen.getByDisplayValue('Global only — no project selected'), { target: { value: '/Users/you/app' } });
+
+      await screen.findByText('Project usage');
+      expect(screen.queryByText(/\/ commit this month/)).toBeNull();
+    });
+
+    it('saves a per-project CLI budget on blur, and clearing it removes the entry', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/config/projects')) return jsonResponse({ projects: [{ path: '/Users/you/app', lastActivity: null }] });
+        if (requested.includes('/config/claude-md')) return jsonResponse({ files: [] });
+        if (requested.includes('/config/git-activity')) return jsonResponse({ isGitRepo: false, commitCount: 0 });
+        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: {}, totals: {} });
+        if (requested.includes('/config')) {
+          return jsonResponse({
+            global: emptyLayer('/home/.claude/settings.json'),
+            project: emptyLayer('/Users/you/app/.claude/settings.json'),
+            local: emptyLayer('/Users/you/app/.claude/settings.local.json'),
+            hooks: [],
+            skills: [],
+            agents: [],
+          });
+        }
+        throw new Error(`unexpected fetch: ${requested}`);
+      });
+
+      render(<ConfigTab />);
+      await screen.findByText('No hooks configured in any layer.');
+      await screen.findByRole('option', { name: '/Users/you/app' });
+      fireEvent.change(screen.getByDisplayValue('Global only — no project selected'), { target: { value: '/Users/you/app' } });
+
+      const budgetInput = await screen.findByLabelText(/Set monthly spend limit/);
+      fireEvent.change(budgetInput, { target: { value: '30' } });
+      fireEvent.blur(budgetInput);
+
+      await waitFor(async () => {
+        const settings = await extensionMessenger.sendMessage('getSettings');
+        expect(settings.perProjectCliBudgets).toEqual([{ projectDir: '/Users/you/app', monthlyBudget: 30 }]);
+      });
+
+      fireEvent.change(budgetInput, { target: { value: '' } });
+      fireEvent.blur(budgetInput);
+
+      await waitFor(async () => {
+        const settings = await extensionMessenger.sendMessage('getSettings');
+        expect(settings.perProjectCliBudgets).toEqual([]);
+      });
+    });
+
+    it('shows a project-health checklist across every known project, and jumps into Guardrails on click', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/config/projects')) {
+          return jsonResponse({
+            projects: [
+              { path: '/Users/you/healthy-app', lastActivity: null },
+              { path: '/Users/you/bare-app', lastActivity: null },
+            ],
+          });
+        }
+        if (requested.includes('/config/claude-md') && !requested.includes('content')) {
+          return jsonResponse({
+            files: requested.includes('healthy-app') ? [{ path: '/Users/you/healthy-app/CLAUDE.md', relativePath: 'CLAUDE.md' }] : [],
+          });
+        }
+        if (requested.includes('/config')) {
+          const isHealthy = requested.includes('healthy-app');
+          return jsonResponse({
+            global: emptyLayer('/home/.claude/settings.json'),
+            project: isHealthy ? { ...emptyLayer('/Users/you/healthy-app/.claude/settings.json'), exists: true } : null,
+            local: null,
+            hooks: isHealthy ? [{ event: 'Stop', matcher: null, command: 'echo hi', timeout: null, statusMessage: null, source: 'x' }] : [],
+            skills: [],
+            agents: [],
+          });
+        }
+        throw new Error(`unexpected fetch: ${requested}`);
+      });
+
+      render(<ConfigTab />);
+
+      await screen.findByText('Project health');
+      expect(await screen.findByText('2 known projects')).toBeTruthy();
+
+      // Row-per-project checkmarks resolve asynchronously as each project's two calls settle.
+      await waitFor(() => {
+        const rows = screen.getAllByRole('row');
+        const healthyRow = rows.find((row) => row.textContent?.includes('healthy-app'))!;
+        const bareRow = rows.find((row) => row.textContent?.includes('bare-app'))!;
+        expect(healthyRow.textContent).toContain('✓');
+        expect(bareRow.textContent).toContain('✗');
+      });
+
+      // Clicking a project's name in the health table selects it in the Guardrails picker below.
+      fireEvent.click(screen.getByRole('button', { name: '/Users/you/healthy-app' }));
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('/Users/you/healthy-app')).toBeTruthy();
+      });
+    });
+
+    it('filters the project-health list, and caps it in a scrollable box instead of growing the page unbounded', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/config/projects')) {
+          return jsonResponse({
+            projects: [
+              { path: '/Users/you/app-one', lastActivity: null },
+              { path: '/Users/you/app-two', lastActivity: null },
+            ],
+          });
+        }
+        if (requested.includes('/config/claude-md')) return jsonResponse({ files: [] });
+        if (requested.includes('/config')) {
+          return jsonResponse({
+            global: emptyLayer('/home/.claude/settings.json'),
+            project: null,
+            local: null,
+            hooks: [],
+            skills: [],
+            agents: [],
+          });
+        }
+        throw new Error(`unexpected fetch: ${requested}`);
+      });
+
+      const { container } = render(<ConfigTab />);
+      await screen.findByText('Project health');
+
+      // Capped-height scroll box, not an unbounded list — the same "scroll, don't grow the
+      // page" treatment already used for permission rules, hooks, and skills below it.
+      expect(container.querySelector('.project-health-scroll')).toBeTruthy();
+
+      // Both project paths also appear as <option> text in the Guardrails picker below — use
+      // getAllByText/queryAllByText throughout, not the singular form, to avoid ambiguity.
+      await screen.findAllByText('/Users/you/app-two');
+      fireEvent.change(screen.getByPlaceholderText('Filter by project path…'), { target: { value: 'app-one' } });
+
+      expect(screen.getAllByText('/Users/you/app-one').length).toBeGreaterThan(0);
+      // The Project Health button for app-two is gone; only the (still-unfiltered) picker
+      // <option> remains — so "gone" means "no longer a button", not "no longer anywhere".
+      expect(screen.queryByRole('button', { name: '/Users/you/app-two' })).toBeNull();
+
+      fireEvent.change(screen.getByPlaceholderText('Filter by project path…'), { target: { value: 'no-such-project' } });
+      expect(screen.getByText(/No projects match/)).toBeTruthy();
+    });
+
+    it('applies all recommended protections one write at a time, never concurrently', async () => {
+      // Concurrent writes would each read the same starting settings.local.json and clobber all
+      // but the last to finish — this test fails if applyAllRecommended ever fires more than one
+      // POST /config/permissions in flight at once.
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const appliedPatterns: string[] = [];
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+        const requested = String(url);
+        if (requested.includes('/config/projects')) {
+          return jsonResponse({ projects: [{ path: '/Users/you/app', lastActivity: null }] });
+        }
+        if (requested.includes('/config/claude-md')) return jsonResponse({ files: [] });
+        if (requested.includes('/config/permissions') && init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as { pattern: string };
+          appliedPatterns.push(body.pattern);
+          inFlight += 1;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          inFlight -= 1;
+          return jsonResponse({ ...emptyLayer('/Users/you/app/.claude/settings.local.json'), exists: true, deny: [body.pattern] });
+        }
+        if (requested.includes('/config')) {
+          return jsonResponse({
+            global: emptyLayer('/home/.claude/settings.json'),
+            project: emptyLayer('/Users/you/app/.claude/settings.json'),
+            local: emptyLayer('/Users/you/app/.claude/settings.local.json'),
+            hooks: [],
+            skills: [],
+            agents: [],
+          });
+        }
+        throw new Error(`unexpected fetch: ${requested}`);
+      });
+
+      render(<ConfigTab />);
+      const select = await screen.findByDisplayValue('Global only — no project selected');
+      await screen.findByRole('option', { name: '/Users/you/app' });
+      fireEvent.change(select, { target: { value: '/Users/you/app' } });
+
+      const applyButton = await screen.findByRole('button', { name: /Apply recommended protections \(8\)/ });
+      fireEvent.click(applyButton);
+
+      await waitFor(() => expect(appliedPatterns).toHaveLength(8));
+      expect(maxInFlight).toBe(1);
+      expect(new Set(appliedPatterns).size).toBe(8); // every known-risky pattern applied exactly once
+    });
+
+    it('flags a project whose permissions/hooks/skills changed since the last time it was viewed', async () => {
+      // A plain flag, not a call-counter — the Project Health section (above) independently
+      // fetches every known project's config too, so a counter tied to fetch invocations would
+      // conflate its calls with ConfigContent's own project-switch fetch.
+      let changed = false;
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/config/projects')) {
+          return jsonResponse({ projects: [{ path: '/Users/you/app', lastActivity: null }] });
+        }
+        if (requested.includes('/config/claude-md')) return jsonResponse({ files: [] });
+        if (requested.includes('/config')) {
+          const isProjectFetch = requested.includes('projectDir=');
+          return jsonResponse({
+            global: emptyLayer('/home/.claude/settings.json'),
+            project: isProjectFetch ? emptyLayer('/Users/you/app/.claude/settings.json') : null,
+            local: isProjectFetch ? emptyLayer('/Users/you/app/.claude/settings.local.json') : null,
+            hooks:
+              isProjectFetch && changed
+                ? [{ event: 'Stop', matcher: null, command: 'echo new-hook', timeout: null, statusMessage: null, source: 'x' }]
+                : [],
+            skills: [],
+            agents: [],
+          });
+        }
+        throw new Error(`unexpected fetch: ${requested}`);
+      });
+
+      render(<ConfigTab />);
+      await screen.findByRole('option', { name: '/Users/you/app' });
+
+      const select = screen.getByDisplayValue('Global only — no project selected');
+      fireEvent.change(select, { target: { value: '/Users/you/app' } });
+      await screen.findByText('No hooks configured in any layer.');
+      // First time viewing this project — nothing to compare against yet.
+      expect(screen.queryByText(/changed here since you last viewed/)).toBeNull();
+
+      // Switch away, simulate an external edit to the project's settings.json, then switch back
+      // — refreshSnapshot's project-switch effect re-fetches and re-checks against the
+      // fingerprint stored from the first view above.
+      fireEvent.change(select, { target: { value: '' } });
+      await waitFor(() => expect(screen.getByDisplayValue('Global only — no project selected')).toBeTruthy());
+      changed = true;
+      fireEvent.change(select, { target: { value: '/Users/you/app' } });
+
+      // Specific detail, not just "something changed" — the whole point of this feature.
+      expect(await screen.findByText(/1 new hook changed here since you last viewed/)).toBeTruthy();
+
+      fireEvent.click(screen.getByText('Dismiss'));
+      expect(screen.queryByText(/changed here since you last viewed/)).toBeNull();
+    });
+
+    it('escalates the drift badge when a newly-allowed rule matches a known-risky pattern', async () => {
+      let riskyAllowed = false;
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/config/projects')) {
+          return jsonResponse({ projects: [{ path: '/Users/you/app', lastActivity: null }] });
+        }
+        if (requested.includes('/config/claude-md')) return jsonResponse({ files: [] });
+        if (requested.includes('/config')) {
+          const isProjectFetch = requested.includes('projectDir=');
+          return jsonResponse({
+            global: emptyLayer('/home/.claude/settings.json'),
+            project:
+              isProjectFetch && riskyAllowed
+                ? { ...emptyLayer('/Users/you/app/.claude/settings.json'), exists: true, allow: ['Bash(rm -rf *)'] }
+                : isProjectFetch
+                  ? emptyLayer('/Users/you/app/.claude/settings.json')
+                  : null,
+            local: isProjectFetch ? emptyLayer('/Users/you/app/.claude/settings.local.json') : null,
+            hooks: [],
+            skills: [],
+            agents: [],
+          });
+        }
+        throw new Error(`unexpected fetch: ${requested}`);
+      });
+
+      render(<ConfigTab />);
+      await screen.findByRole('option', { name: '/Users/you/app' });
+
+      const select = screen.getByDisplayValue('Global only — no project selected');
+      fireEvent.change(select, { target: { value: '/Users/you/app' } });
+      await screen.findByText('No hooks configured in any layer.');
+
+      fireEvent.change(select, { target: { value: '' } });
+      await waitFor(() => expect(screen.getByDisplayValue('Global only — no project selected')).toBeTruthy());
+      riskyAllowed = true;
+      fireEvent.change(select, { target: { value: '/Users/you/app' } });
+
+      const warning = await screen.findByText(/Newly allowed: Bash\(rm -rf \*\) \(Force-delete files\)/);
+      expect(warning).toBeTruthy();
+      expect(warning.className).toBe('error-text');
+    });
+
     it('previews CLAUDE.md as rendered markdown, and lets you edit + save the source', async () => {
       const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
         const requested = String(url);
@@ -189,6 +537,7 @@ describe('ConfigTab', () => {
             local: emptyLayer('/Users/you/app/.claude/settings.local.json'),
             hooks: [],
             skills: [],
+            agents: [],
           });
         }
         throw new Error(`unexpected fetch: ${requested}`);
@@ -241,6 +590,63 @@ describe('ConfigTab', () => {
       expect(screen.queryByText(/Unsaved changes/)).toBeNull();
     });
 
+    it('routes a project subagent to a different model, and shows global agents as read-only', async () => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+        const requested = String(url);
+        if (requested.includes('/config/projects')) {
+          return jsonResponse({ projects: [{ path: '/Users/you/app', lastActivity: null }] });
+        }
+        if (requested.includes('/config/claude-md')) return jsonResponse({ files: [] });
+        if (requested.includes('/config/agents/model') && init?.method === 'PUT') {
+          return jsonResponse({
+            name: 'reviewer',
+            description: 'Reviews a diff.',
+            model: 'haiku',
+            path: '/Users/you/app/.claude/agents/reviewer.md',
+            scope: 'project',
+          });
+        }
+        if (requested.includes('/config')) {
+          return jsonResponse({
+            global: emptyLayer('/home/.claude/settings.json'),
+            project: emptyLayer('/Users/you/app/.claude/settings.json'),
+            local: emptyLayer('/Users/you/app/.claude/settings.local.json'),
+            hooks: [],
+            skills: [],
+            agents: [
+              { name: 'reviewer', description: 'Reviews a diff.', model: 'inherit', path: '/Users/you/app/.claude/agents/reviewer.md', scope: 'project' },
+              { name: 'personal-helper', description: 'A global helper.', model: 'haiku', path: '/home/.claude/agents/personal-helper.md', scope: 'global' },
+            ],
+          });
+        }
+        throw new Error(`unexpected fetch: ${requested}`);
+      });
+
+      render(<ConfigTab />);
+      const select = await screen.findByDisplayValue('Global only — no project selected');
+      await screen.findByRole('option', { name: '/Users/you/app' });
+      fireEvent.change(select, { target: { value: '/Users/you/app' } });
+
+      await screen.findByText('reviewer');
+      // Global agent is read-only — its model shows as plain text, no <select> for it.
+      expect(screen.getByText('personal-helper')).toBeTruthy();
+      expect(screen.getByText(/global — read-only/)).toBeTruthy();
+      expect(screen.getByText('Model: haiku')).toBeTruthy();
+
+      const modelSelect = screen.getByDisplayValue('inherit') as HTMLSelectElement;
+      fireEvent.change(modelSelect, { target: { value: 'haiku' } });
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(
+          'http://127.0.0.1:4317/config/agents/model',
+          expect.objectContaining({
+            method: 'PUT',
+            body: JSON.stringify({ projectDir: '/Users/you/app', path: '/Users/you/app/.claude/agents/reviewer.md', model: 'haiku' }),
+          }),
+        );
+      });
+    });
+
     it('surfaces an error instead of throwing when the daemon rejects /config', async () => {
       vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
         const requested = String(url);
@@ -278,6 +684,7 @@ describe('ConfigTab', () => {
             local: requested.includes('projectDir') ? emptyLayer('/Users/you/app/.claude/settings.local.json') : null,
             hooks: [],
             skills: [],
+            agents: [],
           });
         }
         throw new Error(`unexpected fetch: ${requested}`);
@@ -325,6 +732,7 @@ describe('ConfigTab', () => {
             local: null,
             hooks: [],
             skills: [],
+            agents: [],
           });
         }
         throw new Error(`unexpected fetch: ${requested}`);
@@ -351,6 +759,7 @@ describe('ConfigTab', () => {
           local: emptyLayer('/Users/you/app/.claude/settings.local.json'),
           hooks: [],
           skills: [],
+          agents: [],
         }),
       );
 
@@ -371,6 +780,7 @@ describe('ConfigTab', () => {
           local: null,
           hooks: [],
           skills: [],
+          agents: [],
         });
       });
 

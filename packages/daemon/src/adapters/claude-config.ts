@@ -1,14 +1,13 @@
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, type Dirent } from 'node:fs';
 import path from 'node:path';
-import type { ClaudeConfigSnapshot, ClaudeMdFile, HookEntry, PermissionEffect, SettingsLayer, SkillSummary } from '@headroom/shared';
+import type { AgentDefinition, ClaudeConfigSnapshot, ClaudeMdFile, HookEntry, PermissionEffect, SettingsLayer, SkillSummary } from '@headroom/shared';
 
 /**
  * Reads (and, for `settings.local.json` only, writes) Claude Code's local configuration:
  * permission rules, hooks, and skills. Everything here is read-only except
  * `writePermissionRule`/`removePermissionRule`, which touch nothing but a project's
- * `.claude/settings.local.json` — never the shared `settings.json` (project or global). See root
- * CLAUDE.md's Guardrails feature notes for why that boundary is deliberate: a browser-reachable
- * UI must never silently rewrite a file a team commits and reviews.
+ * `.claude/settings.local.json` — never the shared `settings.json` (project or global). A
+ * browser-reachable UI must never silently rewrite a file a team commits and reviews.
  *
  * Every read here fails soft (missing file, invalid JSON, or an unexpected shape all resolve to
  * an empty/absent result) rather than throwing — this reads files a human hand-edits, unlike
@@ -17,15 +16,14 @@ import type { ClaudeConfigSnapshot, ClaudeMdFile, HookEntry, PermissionEffect, S
 
 /**
  * Every `/config*` route accepts `projectDir` as a plain client-supplied string — there's no
- * "current project" the daemon can derive it from itself (root CLAUDE.md's Guardrails notes).
- * Without this check, an absent/relative/nonexistent `projectDir` would still be handed straight
- * to `path.join()`, meaning a request could touch a path outside any real project (a relative
- * `projectDir` resolves against the daemon *process's* cwd, not any project) or one that doesn't
- * exist at all. This doesn't defend against a caller who already holds the bearer token and
- * wants to target a directory it has real write access to — that's the same trust boundary every
- * other route already relies on (root CLAUDE.md section 9) — it defends against a `projectDir`
- * that's simply wrong (malformed, relative, or already-gone) silently doing something instead of
- * failing loudly with 400.
+ * "current project" the daemon can derive on its own. Without this check, an absent/relative/
+ * nonexistent `projectDir` would still be handed straight to `path.join()`, meaning a request
+ * could touch a path outside any real project (a relative `projectDir` resolves against the
+ * daemon *process's* cwd, not any project) or one that doesn't exist at all. This doesn't defend
+ * against a caller who already holds the bearer token and wants to target a directory it has
+ * real write access to — every route accepts that same trust boundary — it defends against a
+ * `projectDir` that's simply wrong (malformed, relative, or already-gone) silently doing
+ * something instead of failing loudly with 400.
  */
 export function isValidProjectDir(projectDir: string): boolean {
   if (!path.isAbsolute(projectDir)) return false;
@@ -40,6 +38,11 @@ function emptyLayer(filePath: string): SettingsLayer {
   return { path: filePath, exists: false, defaultMode: null, allow: [], ask: [], deny: [] };
 }
 
+/** The one guard every "does this JSON key look like an object?" check in this file reduces to. */
+function asPlainObject(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+}
+
 function readJsonObject(filePath: string): Record<string, unknown> | null {
   let raw: string;
   try {
@@ -48,8 +51,7 @@ function readJsonObject(filePath: string): Record<string, unknown> | null {
     return null;
   }
   try {
-    const parsed: unknown = JSON.parse(raw);
-    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : null;
+    return asPlainObject(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -65,18 +67,17 @@ export function readSettingsLayer(filePath: string): SettingsLayer {
   const parsed = readJsonObject(filePath);
   if (!parsed) return emptyLayer(filePath);
 
-  const permissions = parsed.permissions;
-  if (typeof permissions !== 'object' || permissions === null) {
+  const permissions = asPlainObject(parsed.permissions);
+  if (!permissions) {
     return { ...emptyLayer(filePath), exists: true };
   }
-  const p = permissions as Record<string, unknown>;
   return {
     path: filePath,
     exists: true,
-    defaultMode: typeof p.defaultMode === 'string' ? p.defaultMode : null,
-    allow: toStringArray(p.allow),
-    ask: toStringArray(p.ask),
-    deny: toStringArray(p.deny),
+    defaultMode: typeof permissions.defaultMode === 'string' ? permissions.defaultMode : null,
+    allow: toStringArray(permissions.allow),
+    ask: toStringArray(permissions.ask),
+    deny: toStringArray(permissions.deny),
   };
 }
 
@@ -85,27 +86,26 @@ export function readSettingsLayer(filePath: string): SettingsLayer {
 export function readHooksLayer(filePath: string): HookEntry[] {
   const parsed = readJsonObject(filePath);
   if (!parsed) return [];
-  const hooks = parsed.hooks;
-  if (typeof hooks !== 'object' || hooks === null) return [];
+  const hooks = asPlainObject(parsed.hooks);
+  if (!hooks) return [];
 
   const entries: HookEntry[] = [];
-  for (const [event, groups] of Object.entries(hooks as Record<string, unknown>)) {
+  for (const [event, groups] of Object.entries(hooks)) {
     if (!Array.isArray(groups)) continue;
     for (const group of groups) {
-      if (typeof group !== 'object' || group === null) continue;
-      const g = group as Record<string, unknown>;
-      const matcher = typeof g.matcher === 'string' ? g.matcher : null;
-      const commandList = Array.isArray(g.hooks) ? g.hooks : [];
+      const groupObj = asPlainObject(group);
+      if (!groupObj) continue;
+      const matcher = typeof groupObj.matcher === 'string' ? groupObj.matcher : null;
+      const commandList = Array.isArray(groupObj.hooks) ? groupObj.hooks : [];
       for (const hook of commandList) {
-        if (typeof hook !== 'object' || hook === null) continue;
-        const h = hook as Record<string, unknown>;
-        if (typeof h.command !== 'string') continue;
+        const hookObj = asPlainObject(hook);
+        if (!hookObj || typeof hookObj.command !== 'string') continue;
         entries.push({
           event,
           matcher,
-          command: h.command,
-          timeout: typeof h.timeout === 'number' ? h.timeout : null,
-          statusMessage: typeof h.statusMessage === 'string' ? h.statusMessage : null,
+          command: hookObj.command,
+          timeout: typeof hookObj.timeout === 'number' ? hookObj.timeout : null,
+          statusMessage: typeof hookObj.statusMessage === 'string' ? hookObj.statusMessage : null,
           source: filePath,
         });
       }
@@ -178,6 +178,52 @@ export function readSkills(projectDir: string | undefined, claudeConfigDir: stri
   return results;
 }
 
+/** Unlike skills, a subagent definition is one flat `<name>.md` directly inside the agents
+ *  directory — no per-agent subfolder. Reuses the same `parseFrontmatter()` as skills (same flat
+ *  scalar-field YAML shape). Only `name`, `description`, and `model` are surfaced —
+ *  `tools`/`disallowedTools` and the system-prompt body are left unparsed since model routing is
+ *  all this reads them for. */
+function readAgentsFromDir(agentsDir: string, scope: AgentDefinition['scope']): AgentDefinition[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(agentsDir);
+  } catch {
+    return [];
+  }
+
+  const agents: AgentDefinition[] = [];
+  for (const entry of entries) {
+    if (!entry.endsWith('.md')) continue;
+    const filePath = path.join(agentsDir, entry);
+    let raw: string;
+    try {
+      raw = readFileSync(filePath, 'utf-8');
+    } catch {
+      continue;
+    }
+    const frontmatter = parseFrontmatter(raw);
+    if (!frontmatter?.name) continue;
+    agents.push({
+      name: frontmatter.name,
+      description: frontmatter.description ?? '',
+      model: frontmatter.model ?? null,
+      path: filePath,
+      scope,
+    });
+  }
+  return agents;
+}
+
+/** Project subagents (`<projectDir>/.claude/agents/*.md`, editable — see `writeAgentModel`)
+ *  plus global personal ones (`<claudeConfigDir>/agents/*.md`, read-only: writes never touch
+ *  global/shared config, same restraint as permission overrides). */
+export function readAgentDefinitions(projectDir: string | undefined, claudeConfigDir: string): AgentDefinition[] {
+  const results: AgentDefinition[] = [];
+  if (projectDir) results.push(...readAgentsFromDir(path.join(projectDir, '.claude', 'agents'), 'project'));
+  results.push(...readAgentsFromDir(path.join(claudeConfigDir, 'agents'), 'global'));
+  return results;
+}
+
 export function readClaudeConfigSnapshot({
   claudeConfigDir,
   projectDir,
@@ -199,7 +245,14 @@ export function readClaudeConfigSnapshot({
     hooks.push(...readHooksLayer(projectSettingsPath), ...readHooksLayer(localSettingsPath));
   }
 
-  return { global, project, local, hooks, skills: readSkills(projectDir, claudeConfigDir) };
+  return {
+    global,
+    project,
+    local,
+    hooks,
+    skills: readSkills(projectDir, claudeConfigDir),
+    agents: readAgentDefinitions(projectDir, claudeConfigDir),
+  };
 }
 
 /** Read-modify-write on `<projectDir>/.claude/settings.local.json` only — never `settings.json`
@@ -221,13 +274,11 @@ export function writePermissionRule({
   mkdirSync(dir, { recursive: true });
 
   const parsed = readJsonObject(filePath) ?? {};
-  const permissions = (typeof parsed.permissions === 'object' && parsed.permissions !== null
-    ? (parsed.permissions as Record<string, unknown>)
-    : {}) as Record<string, unknown>;
+  const permissions = asPlainObject(parsed.permissions) ?? {};
 
-  const allow = toStringArray(permissions.allow).filter((p) => p !== pattern);
-  const ask = toStringArray(permissions.ask).filter((p) => p !== pattern);
-  const deny = toStringArray(permissions.deny).filter((p) => p !== pattern);
+  const allow = toStringArray(permissions.allow).filter((existing) => existing !== pattern);
+  const ask = toStringArray(permissions.ask).filter((existing) => existing !== pattern);
+  const deny = toStringArray(permissions.deny).filter((existing) => existing !== pattern);
   (effect === 'allow' ? allow : effect === 'ask' ? ask : deny).push(pattern);
 
   parsed.permissions = { ...permissions, allow, ask, deny };
@@ -252,13 +303,12 @@ export function removePermissionRule({
   const parsed = readJsonObject(filePath);
   if (!parsed) return readSettingsLayer(filePath);
 
-  const permissions = parsed.permissions;
-  if (typeof permissions !== 'object' || permissions === null) return readSettingsLayer(filePath);
-  const p = permissions as Record<string, unknown>;
-  const current = toStringArray(p[effect]);
+  const permissions = asPlainObject(parsed.permissions);
+  if (!permissions) return readSettingsLayer(filePath);
+  const current = toStringArray(permissions[effect]);
   if (!current.includes(pattern)) return readSettingsLayer(filePath);
 
-  parsed.permissions = { ...p, [effect]: current.filter((entry) => entry !== pattern) };
+  parsed.permissions = { ...permissions, [effect]: current.filter((entry) => entry !== pattern) };
   writeFileSync(filePath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf-8');
   return readSettingsLayer(filePath);
 }
@@ -320,4 +370,66 @@ export function writeClaudeMdContent(projectDir: string, requestedPath: string, 
   if (!allowed) return false;
   writeFileSync(requestedPath, content, 'utf-8');
   return true;
+}
+
+/** Sets `key: value` inside a `---\n...\n---` frontmatter block only — replaces the line if
+ *  `key:` already appears there, otherwise appends one just before the closing `---`. Every
+ *  other line (other frontmatter fields, and the entire body below the block) passes through
+ *  byte-for-byte untouched: this is a targeted line edit, not a YAML round-trip, so a subagent's
+ *  `tools`/`disallowedTools`/system-prompt body can never be silently reformatted or dropped by
+ *  writing its `model:` field. Returns null (refuses to write) if `content` doesn't start with
+ *  recognizable frontmatter at all. */
+function setFrontmatterField(content: string, key: string, value: string): string | null {
+  const match = /^(---\r?\n)([\s\S]*?)(\r?\n---)/.exec(content);
+  if (!match) return null;
+  const open = match[1] ?? '';
+  const body = match[2] ?? '';
+  const close = match[3] ?? '';
+
+  const keyLine = new RegExp(`^${key}:.*$`);
+  let replaced = false;
+  const lines = body.split(/\r?\n/).map((line) => {
+    if (keyLine.test(line)) {
+      replaced = true;
+      return `${key}: ${value}`;
+    }
+    return line;
+  });
+  if (!replaced) lines.push(`${key}: ${value}`);
+
+  return content.slice(0, match.index) + open + lines.join('\n') + close + content.slice(match.index + match[0].length);
+}
+
+/**
+ * Edits only a project-level subagent's `model:` frontmatter field — never a global
+ * `~/.claude/agents/*.md` one (same restraint as permission overrides: this daemon never writes
+ * to config outside the one project it's been told about). Same enumerate-then-check-membership
+ * guard as `writeClaudeMdContent`: re-derives the real project-scope agent files fresh and
+ * refuses anything that isn't an exact match, so a crafted `path` can't target a file outside
+ * `<projectDir>/.claude/agents/`. Unlike CLAUDE.md this is a real, team-committed file too (the
+ * same trade-off already accepted for CLAUDE.md edits) — protected only by an explicit save on
+ * the client side and the project's own git history, not by redirecting to a gitignored copy.
+ */
+export function writeAgentModel({
+  projectDir,
+  requestedPath,
+  model,
+}: {
+  projectDir: string;
+  requestedPath: string;
+  model: string;
+}): AgentDefinition | null {
+  const allowed = readAgentsFromDir(path.join(projectDir, '.claude', 'agents'), 'project').some(
+    (agent) => agent.path === requestedPath,
+  );
+  if (!allowed) return null;
+
+  const raw = readFileSync(requestedPath, 'utf-8');
+  const updated = setFrontmatterField(raw, 'model', model);
+  if (updated === null) return null;
+  writeFileSync(requestedPath, updated, 'utf-8');
+
+  const frontmatter = parseFrontmatter(updated);
+  if (!frontmatter?.name) return null;
+  return { name: frontmatter.name, description: frontmatter.description ?? '', model: frontmatter.model ?? null, path: requestedPath, scope: 'project' };
 }

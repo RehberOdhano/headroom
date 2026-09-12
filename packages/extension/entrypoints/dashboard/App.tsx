@@ -1,10 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useState } from 'react';
-import { forecastBurnRate } from '@headroom/shared';
+import { forecastBurnRate, soonestExpiringPromoTranche, type PrepaidCreditsSnapshot, type TimedPercent } from '@headroom/shared';
 import { db, type LimitSnapshotRecord } from '../../lib/db.js';
 import { barColor, describeForecast, describeSource, formatPercent, formatResetLabel } from '../../lib/format.js';
 import { sparklinePointsAttr, toSparklinePoints } from '../../lib/chart.js';
-import { barHistory, withinWindow, type BarKey, type TimedPercent } from '../../lib/history.js';
+import { barHistory, withinWindow, type BarKey } from '../../lib/history.js';
 import { extensionMessenger } from '../../lib/messaging.js';
 import { DEFAULT_SETTINGS } from '../../lib/settings.js';
 import { CliTab, SearchTab } from './Cli.tsx';
@@ -84,36 +84,65 @@ function Sparkline({ series, thresholds }: { series: TimedPercent[]; thresholds:
   );
 }
 
-function ExtraCreditsSection({ snapshots }: { snapshots: LimitSnapshotRecord[] }) {
-  // No captured snapshot has extra-credits info at all -> hide the section (most accounts
-  // don't have pay-as-you-go credits enabled). Its fields can otherwise be individually null
-  // even when present, so the render below branches on which ones are actually populated.
+/**
+ * Both blocks below are claude.ai's own single "Usage credits" feature (Settings > Usage) —
+ * spend against a monthly $ limit, funded from a balance that includes promotional grants — just
+ * split across two different captured endpoints (`/usage`'s `extra_usage` vs
+ * `/prepaid/credits`) on our side. One card with two labeled subsections, not two cards, so that
+ * split doesn't read as two unrelated features.
+ */
+function UsageCreditsSection({ snapshots, prepaidCredits }: { snapshots: LimitSnapshotRecord[]; prepaidCredits: PrepaidCreditsSnapshot | null }) {
+  // No captured snapshot has extra-credits info at all -> most accounts don't have pay-as-you-go
+  // credits enabled. Its fields can otherwise be individually null even when present, so the
+  // render below branches on which ones are actually populated.
   const info = [...snapshots].reverse().find((s) => s.extraCredits)?.extraCredits;
-  if (!info) return null;
+  if (!info && !prepaidCredits) return null;
 
-  const hasAmounts = info.usedAmount !== null && info.limitAmount !== null;
+  const hasAmounts = info != null && info.usedAmount !== null && info.limitAmount !== null;
   const amountsText = hasAmounts ? `${info.currency ?? ''} ${info.usedAmount!.toFixed(2)} / ${info.limitAmount!.toFixed(2)}` : null;
+  const soonest = prepaidCredits ? soonestExpiringPromoTranche(prepaidCredits) : null;
 
   return (
     <section className="card">
       <div className="card-header">
-        <h2 className="card-title">Extra usage credits</h2>
+        <h2 className="card-title">Usage credits</h2>
       </div>
-      {info.percent !== null ? (
-        <div className="progress-row">
-          <span className="progress-percent">{formatPercent(info.percent)}%</span>
-          <div className="progress-track">
-            <div
-              className="progress-fill"
-              style={{ width: `${Math.min(100, Math.max(0, info.percent))}%`, background: 'var(--color-accent)' }}
-            />
-          </div>
-          {amountsText && <span className="progress-meta">{amountsText}</span>}
-        </div>
-      ) : amountsText ? (
-        <p className="hint">{amountsText} used — percent not reported yet.</p>
-      ) : (
-        <p className="hint">Enabled on your plan, but no usage reported yet.</p>
+
+      {info && (
+        <>
+          <p className="table-title">Spent this month</p>
+          {info.percent !== null ? (
+            <div className="progress-row">
+              <span className="progress-percent">{formatPercent(info.percent)}%</span>
+              <div className="progress-track">
+                <div
+                  className="progress-fill"
+                  style={{ width: `${Math.min(100, Math.max(0, info.percent))}%`, background: 'var(--color-accent)' }}
+                />
+              </div>
+              {amountsText && <span className="progress-meta">{amountsText}</span>}
+            </div>
+          ) : amountsText ? (
+            <p className="hint">{amountsText} spent — percent not reported yet.</p>
+          ) : (
+            <p className="hint">Enabled on your plan, but no usage reported yet.</p>
+          )}
+        </>
+      )}
+
+      {prepaidCredits && (
+        <>
+          <p className="table-title">Balance</p>
+          <p className="hint">
+            {prepaidCredits.currency} {prepaidCredits.balanceAmount.toFixed(2)} available · auto-reload {prepaidCredits.autoReloadEnabled ? 'on' : 'off'}
+          </p>
+          {soonest && (
+            <p className="hint">
+              {soonest.currency} {soonest.remainingAmount.toFixed(2)} of promotional credit expires{' '}
+              {new Date(soonest.expiresAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}.
+            </p>
+          )}
+        </>
       )}
     </section>
   );
@@ -192,6 +221,10 @@ export default function App() {
   const [windowKey, setWindowKey] = useState<WindowKey>('7d');
   const [alertThresholds, setAlertThresholds] = useState<number[]>(DEFAULT_SETTINGS.alertThresholds);
   const allSnapshots = useLiveQuery(() => db.limitSnapshots.orderBy('capturedAt').toArray(), []);
+  const prepaidCreditsRecord = useLiveQuery(() => db.meta.get('prepaidCredits'), []);
+  const prepaidCredits: PrepaidCreditsSnapshot | null = prepaidCreditsRecord
+    ? (JSON.parse(prepaidCreditsRecord.value) as PrepaidCreditsSnapshot)
+    : null;
 
   useEffect(() => {
     void extensionMessenger.sendMessage('getSettings').then((settings) => setAlertThresholds(settings.alertThresholds));
@@ -249,7 +282,7 @@ export default function App() {
               </div>
             )}
 
-            <ExtraCreditsSection snapshots={allSnapshots} />
+            <UsageCreditsSection snapshots={allSnapshots} prepaidCredits={prepaidCredits} />
 
             <p className="page-footer">
               {allSnapshots.length} snapshot{allSnapshots.length === 1 ? '' : 's'} stored locally

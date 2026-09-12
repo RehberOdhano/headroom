@@ -130,6 +130,36 @@ describe('daemon app', () => {
     });
   });
 
+  describe('GET /usage/patterns', () => {
+    it('returns skill, command, subagent, and MCP-server usage counted from session logs', async () => {
+      await withFixtureClaudeDir(
+        async (claudeConfigDir) => {
+          const res = await createApp({ ccusage: { claudeConfigDir } }).request('/usage/patterns');
+          expect(res.status).toBe(200);
+          const body = await res.json();
+          expect(body.skills).toEqual([{ name: 'code-review', count: 1 }]);
+          expect(body.commands).toEqual([{ name: '/compact', count: 1 }]);
+          expect(body.agents).toEqual([{ subagentType: 'Explore', count: 2, inputTokens: 60, outputTokens: 25 }]);
+          expect(body.mcpServers.sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name))).toEqual([
+            { name: 'claude-in-chrome', count: 1 },
+            { name: 'filesystem', count: 1 },
+          ]);
+        },
+        'session-log-dir',
+      );
+    });
+
+    it('returns empty arrays when there is no session data', async () => {
+      // Explicit nonexistent dir, not a bare createApp() — that would fall through to this
+      // real machine's own ~/.claude, which has real session logs and would make this test
+      // depend on developer-machine state.
+      const res = await createApp({ ccusage: { claudeConfigDir: '/does/not/exist' } }).request('/usage/patterns');
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toEqual({ skills: [], commands: [], agents: [], mcpServers: [] });
+    });
+  });
+
   describe('/sessions/:id/export', () => {
     it('renders a session transcript as markdown', async () => {
       await withFixtureClaudeDir(
@@ -257,6 +287,61 @@ describe('daemon app', () => {
             body: JSON.stringify({ projectDir, path: outside, content: 'clobbered' }),
           });
           expect(res.status).toBe(404);
+        },
+        'claude-config-dir',
+      );
+    });
+
+    it('PUT /config/agents/model updates a project agent\'s model field', async () => {
+      await withFixtureClaudeDir(
+        async (dir) => {
+          const projectDir = path.join(dir, 'project');
+          const filePath = path.join(projectDir, '.claude', 'agents', 'reviewer.md');
+          const res = await createApp().request('/config/agents/model', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectDir, path: filePath, model: 'haiku' }),
+          });
+          expect(res.status).toBe(200);
+          expect(await res.json()).toEqual({
+            name: 'reviewer',
+            description: 'Read-only reviewer used only in daemon fixtures, not real conversation content.',
+            model: 'haiku',
+            path: filePath,
+            scope: 'project',
+          });
+        },
+        'claude-config-dir',
+      );
+    });
+
+    it('PUT /config/agents/model 404s for a path outside the project-scope agents it can enumerate', async () => {
+      await withFixtureClaudeDir(
+        async (dir) => {
+          const projectDir = path.join(dir, 'project');
+          const globalAgentPath = path.join(dir, 'home', 'agents', 'personal-helper.md');
+          const res = await createApp().request('/config/agents/model', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectDir, path: globalAgentPath, model: 'opus' }),
+          });
+          expect(res.status).toBe(404);
+        },
+        'claude-config-dir',
+      );
+    });
+
+    it('PUT /config/agents/model rejects an empty model', async () => {
+      await withFixtureClaudeDir(
+        async (dir) => {
+          const projectDir = path.join(dir, 'project');
+          const filePath = path.join(projectDir, '.claude', 'agents', 'reviewer.md');
+          const res = await createApp().request('/config/agents/model', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectDir, path: filePath, model: '   ' }),
+          });
+          expect(res.status).toBe(400);
         },
         'claude-config-dir',
       );

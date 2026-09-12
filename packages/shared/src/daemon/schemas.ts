@@ -73,6 +73,41 @@ export const daemonModelAggregateResponseSchema = z.object({
   models: z.array(modelBreakdownSchema),
 });
 
+const namedCountSchema = z.object({
+  name: z.string(),
+  count: z.number(),
+});
+
+const agentUsageSchema = z.object({
+  subagentType: z.string(),
+  count: z.number(),
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+});
+
+/** `GET /usage/patterns` — skill/slash-command frequency and per-subagent-type token totals,
+ *  all counted from local session transcripts (packages/daemon/src/adapters/usage-patterns.ts).
+ *  Structural markers only (names and counts), never conversation content. */
+export const usagePatternsResponseSchema = z.object({
+  skills: z.array(namedCountSchema),
+  commands: z.array(namedCountSchema),
+  agents: z.array(agentUsageSchema),
+  // `.default([])`: a not-yet-restarted daemon (a long-running process that only picks up a
+  // schema/shape change on restart, unlike the extension it talks to) would otherwise omit this
+  // field entirely and fail the *whole* Patterns response. Every daemon response field needs
+  // this same defensiveness — see `claudeConfigSnapshotSchema`'s `agents` field for the same
+  // pattern.
+  mcpServers: z.array(namedCountSchema).default([]),
+});
+
+// `.default()` on both fields for the same reason as `usagePatternsResponseSchema.mcpServers`
+// above: a daemon that hasn't restarted since this route shipped would otherwise fail this
+// response's shape check entirely rather than degrading to "no git data yet".
+export const gitActivityResponseSchema = z.object({
+  isGitRepo: z.boolean().default(false),
+  commitCount: z.number().default(0),
+});
+
 export const daemonSearchMatchSchema = z.object({
   sessionId: z.string(),
   cwd: z.string().nullable(),
@@ -100,4 +135,9 @@ export type DaemonDailyReport = z.infer<typeof daemonDailyReportSchema>;
 export type DaemonProjectDailyReport = z.infer<typeof daemonProjectDailyReportSchema>;
 export type DaemonModelAggregate = z.infer<typeof modelBreakdownSchema>;
 export type DaemonSearchMatch = z.infer<typeof daemonSearchMatchSchema>;
+export type DaemonSearchResponse = z.infer<typeof daemonSearchResponseSchema>;
 export type DaemonPairResponse = z.infer<typeof daemonPairResponseSchema>;
+export type UsagePatterns = z.infer<typeof usagePatternsResponseSchema>;
+export type GitActivityResponse = z.infer<typeof gitActivityResponseSchema>;
+export type NamedCount = z.infer<typeof namedCountSchema>;
+export type AgentUsage = z.infer<typeof agentUsageSchema>;

@@ -1,11 +1,7 @@
+import type { TimedPercent } from '@headroom/shared';
 import type { LimitSnapshotRecord } from './db.js';
 
 export type BarKey = 'session' | 'weekly';
-
-export interface TimedPercent {
-  capturedAt: string;
-  percent: number;
-}
 
 /** Pulls a {capturedAt, percent}[] time series for one bar out of stored snapshots, dropping
  *  any snapshot where that bar was absent (kept `null` by normalizeUsageResponse). */

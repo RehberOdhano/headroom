@@ -1,10 +1,8 @@
 import type { DailyReport, ModelBreakdown } from './adapters/ccusage.schemas.js';
 
-export interface ModelAggregate extends ModelBreakdown {}
-
 /** Sums each model's breakdown across every daily entry. No separate ccusage call needed. */
-export function aggregateByModel(report: DailyReport): ModelAggregate[] {
-  const byModel = new Map<string, ModelAggregate>();
+export function aggregateByModel(report: DailyReport): ModelBreakdown[] {
+  const byModel = new Map<string, ModelBreakdown>();
 
   for (const day of report.daily) {
     for (const breakdown of day.modelBreakdowns) {

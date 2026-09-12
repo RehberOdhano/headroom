@@ -18,10 +18,34 @@ export interface MetaRecord {
   value: string;
 }
 
+/** The structured pieces `fingerprintSnapshot()` (Config.tsx) hashes — stored alongside the hash
+ *  so a later mismatch can be diffed into specific wording ("2 new allow rules") instead of a
+ *  one-size-fits-all "changed" message. Sorted arrays, same as the hash itself. */
+export interface ConfigFingerprintSummary {
+  allow: string[];
+  ask: string[];
+  deny: string[];
+  hooks: string[];
+  skills: string[];
+}
+
+/** Last-seen Guardrails config fingerprint for one project — lets Config.tsx flag "changed since
+ *  you last viewed this project" without the (deliberately stateless, see root README) daemon
+ *  tracking anything itself. `projectDir` is the primary key: one row per project. `summary` is
+ *  optional only because Dexie doesn't enforce a shape on existing rows if this type changes in
+ *  the future the way it did once already here — not because it's meant to be routinely absent. */
+export interface ConfigFingerprintRecord {
+  projectDir: string;
+  fingerprint: string;
+  summary?: ConfigFingerprintSummary;
+  checkedAt: string;
+}
+
 export class HeadroomDb extends Dexie {
   rawRecords!: EntityTable<RawRecord, 'id'>;
   limitSnapshots!: EntityTable<LimitSnapshotRecord, 'id'>;
   meta!: EntityTable<MetaRecord, 'key'>;
+  configFingerprints!: EntityTable<ConfigFingerprintRecord, 'projectDir'>;
 
   constructor() {
     super('headroom');
@@ -43,6 +67,14 @@ export class HeadroomDb extends Dexie {
       rawRecords: '++id, endpoint, capturedAt',
       limitSnapshots: '++id, capturedAt',
       meta: 'key',
+    });
+    // v4: one fingerprint per project, for Config.tsx's Guardrails-drift detection ("changed
+    // since you last viewed this project") — see ConfigFingerprintRecord's doc comment.
+    this.version(4).stores({
+      rawRecords: '++id, endpoint, capturedAt',
+      limitSnapshots: '++id, capturedAt',
+      meta: 'key',
+      configFingerprints: 'projectDir',
     });
   }
 }
