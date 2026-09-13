@@ -8,3 +8,4 @@ export * from './daemon/schemas.js';
 export * from './reconciliation/tokens-per-percent.js';
 export * from './claude-config/index.js';
 export * from './anomaly/session-anomaly.js';
+export * from './bootstrap/index.js';

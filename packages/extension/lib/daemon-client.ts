@@ -6,13 +6,19 @@ import {
   daemonSearchResponseSchema,
   daemonSessionsReportSchema,
   usagePatternsResponseSchema,
+  bootstrapResultSchema,
   claudeConfigSnapshotSchema,
   claudeMdContentResponseSchema,
   claudeMdListResponseSchema,
   gitActivityResponseSchema,
   knownProjectsResponseSchema,
+  projectDetectionResponseSchema,
   settingsLayerSchema,
   type AgentDefinition,
+  type BootstrapDocumentEncoding,
+  type BootstrapMode,
+  type BootstrapResult,
+  type BootstrapStack,
   type ClaudeConfigSnapshot,
   type ClaudeMdFile,
   type DaemonDailyReport,
@@ -23,6 +29,7 @@ import {
   type GitActivityResponse,
   type KnownProject,
   type PermissionEffect,
+  type ProjectDetectionResult,
   type SettingsLayer,
   type UsagePatterns,
 } from '@headroom/shared';
@@ -225,6 +232,47 @@ export function removeDaemonPermissionRule(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
+}
+
+/** No-LLM project scaffold (`POST /bootstrap`, packages/daemon/src/adapters/bootstrap.ts) — a
+ *  deterministic folder/file setup from form inputs, never a guess at project content. `document`
+ *  is the full text of an optional uploaded proposal/requirements/handoff file, saved verbatim
+ *  under the target folder's `docs/`. */
+export function runDaemonBootstrap(
+  settings: Settings,
+  params: {
+    targetDir: string;
+    mode: BootstrapMode;
+    name: string;
+    description: string;
+    /** Free-form "Stack" tags (e.g. "React", "PostgreSQL", "Java") — there's no separate stack
+     *  field; the daemon infers which of its three real scaffold templates (if any) applies from
+     *  these tags (`inferStackFromTags`) and reports it back as `inferredStack`. Every tag is also
+     *  recorded into the generated CLAUDE.md regardless of whether it matched a template. */
+    technologies: string[];
+    /** `encoding` is `'utf8'` for real text (`.md`/`.txt`) or `'base64'` for anything binary
+     *  (`.pdf`/`.doc`/`.docx`) — a binary file can't survive a plain UTF-8 string round-trip. */
+    document: { filename: string; content: string; encoding: BootstrapDocumentEncoding } | null;
+    initGit: boolean;
+    /** Spawns the stack's real install/test commands on the daemon — the one deliberate,
+     *  explicit exception to "nothing leaves the machine" (root CLAUDE.md), since those commands
+     *  reach the real npm/PyPI/Go registries. Only meaningful when a scaffold actually got
+     *  written this same call. */
+    runVerification: boolean;
+  },
+): Promise<DaemonResult<BootstrapResult>> {
+  return daemonFetch(settings, '/bootstrap', bootstrapResultSchema, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+}
+
+/** Read-only, deterministic detection of an existing folder's already-there project info
+ *  (`GET /bootstrap/detect`, packages/daemon/src/adapters/project-detect.ts) — used to prefill
+ *  the "Use existing folder" form, never to write anything. */
+export function getDaemonProjectDetection(settings: Settings, targetDir: string): Promise<DaemonResult<ProjectDetectionResult>> {
+  return daemonFetch(settings, `/bootstrap/detect?targetDir=${encodeURIComponent(targetDir)}`, projectDetectionResponseSchema);
 }
 
 function toQuery(params: { since?: string; until?: string } | undefined, prefix: '?' | '&' = '?'): string {

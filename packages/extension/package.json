@@ -2,7 +2,7 @@
   "name": "@headroom/extension",
   "description": "Claude usage companion: limit bars, history, forecasting, and CLI attribution for claude.ai and Claude Code.",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "scripts": {
     "dev": "wxt",

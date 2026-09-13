@@ -126,6 +126,7 @@ its output as an additional segment.
 | Session anomaly detector *(daemon)* | Notifies once for a CLI session costing far more than a typical one for the account (5x the median, with a floor so a cheap window doesn't flag everything) — usually a stuck or looping agent rather than unusually valuable work. |
 | Attention badge *(daemon)* | A small count on the toolbar icon aggregating retention warnings and any CLI budget (global or per-project) currently exceeded, so those don't stay invisible until you happen to open the right tab. |
 | Quiet hours | An optional daily window in which every notification this extension can fire (threshold, CLI budget, digest, session anomaly) is suppressed — not dropped, just delayed to the next check once the window ends. |
+| New Project *(daemon)* | Scaffold a new project folder, or fill in an existing one, with a name/description, a free-form "Stack" tag picker (typing a tag not in the curated list adds it, growing the list over time), and starter files for whichever of six real templates the picked stack tags resolve to (Node/TypeScript, Python, Go, Java, Kotlin, C#) — anything else is recorded as metadata only, no scaffold generated. Detects an existing folder's stack automatically (recursively, so a stack marker in a subdirectory like a mobile app's native `android/` folder is still found), never by reading document content. Optional git init, permission-rule protections, and a real install/build/test "verify" run. |
 
 ## Privacy & security
 
@@ -161,7 +162,7 @@ packages/
 
 ```sh
 pnpm install
-pnpm -r run test         # 456 tests across the three packages as of this writing
+pnpm -r run test         # 622 tests across the three packages as of this writing
 pnpm -r run typecheck
 pnpm -r run build
 ```

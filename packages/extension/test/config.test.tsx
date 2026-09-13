@@ -168,6 +168,52 @@ describe('ConfigTab', () => {
       });
     });
 
+    it('removes a local override via its icon button, not a text "Remove" button', async () => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+        const requested = String(url);
+        if (requested.includes('/config/projects')) {
+          return jsonResponse({ projects: [{ path: '/Users/you/app', lastActivity: null }] });
+        }
+        if (requested.includes('/config/claude-md')) return jsonResponse({ files: [] });
+        if (requested.includes('/config/permissions') && init?.method === 'DELETE') {
+          return jsonResponse({ ...emptyLayer('/Users/you/app/.claude/settings.local.json'), exists: true, deny: [] });
+        }
+        if (requested.includes('/config')) {
+          return jsonResponse({
+            global: emptyLayer('/home/.claude/settings.json'),
+            project: emptyLayer('/Users/you/app/.claude/settings.json'),
+            local: { ...emptyLayer('/Users/you/app/.claude/settings.local.json'), exists: true, deny: ['Bash(rm -rf *)'] },
+            hooks: [],
+            skills: [],
+            agents: [],
+          });
+        }
+        throw new Error(`unexpected fetch: ${requested}`);
+      });
+
+      render(<ConfigTab />);
+      await screen.findByRole('option', { name: '/Users/you/app' });
+      fireEvent.change(screen.getByDisplayValue('Global only — no project selected'), { target: { value: '/Users/you/app' } });
+
+      // Icon-only now, same as the three effect buttons — no visible "Remove" text anywhere.
+      // Only this one row has a local override, so the title (shared across rows, like the
+      // effect buttons') resolves to exactly one match here.
+      const removeButton = await screen.findByTitle('Remove local override');
+      expect(screen.queryByText('Remove')).toBeNull();
+
+      fireEvent.click(removeButton);
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(
+          'http://127.0.0.1:4317/config/permissions',
+          expect.objectContaining({
+            method: 'DELETE',
+            body: JSON.stringify({ projectDir: '/Users/you/app', pattern: 'Bash(rm -rf *)', effect: 'deny' }),
+          }),
+        );
+      });
+    });
+
     it('shows tokens/cost-per-commit once a project has both git and CLI activity', async () => {
       vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
         const requested = String(url);

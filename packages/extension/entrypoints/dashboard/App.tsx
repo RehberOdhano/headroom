@@ -9,6 +9,7 @@ import { extensionMessenger } from '../../lib/messaging.js';
 import { DEFAULT_SETTINGS } from '../../lib/settings.js';
 import { CliTab, SearchTab } from './Cli.tsx';
 import { ConfigTab } from './Config.tsx';
+import { NewProjectTab } from './NewProject.tsx';
 
 const WINDOWS = {
   '24h': 24 * 60 * 60 * 1000,
@@ -22,6 +23,7 @@ const TABS = [
   { key: 'cli', label: 'CLI Attribution' },
   { key: 'search', label: 'Search' },
   { key: 'config', label: 'Guardrails' },
+  { key: 'new-project', label: 'New Project' },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -218,6 +220,7 @@ function BarSection({
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('charts');
+  const [pendingGuardrailsProjectDir, setPendingGuardrailsProjectDir] = useState<string | null>(null);
   const [windowKey, setWindowKey] = useState<WindowKey>('7d');
   const [alertThresholds, setAlertThresholds] = useState<number[]>(DEFAULT_SETTINGS.alertThresholds);
   const allSnapshots = useLiveQuery(() => db.limitSnapshots.orderBy('capturedAt').toArray(), []);
@@ -303,7 +306,19 @@ export default function App() {
       </div>
 
       <div hidden={activeTab !== 'config'} role="tabpanel">
-        <ConfigTab />
+        <ConfigTab
+          pendingProjectDir={pendingGuardrailsProjectDir}
+          onPendingProjectDirApplied={() => setPendingGuardrailsProjectDir(null)}
+        />
+      </div>
+
+      <div hidden={activeTab !== 'new-project'} role="tabpanel">
+        <NewProjectTab
+          onProjectReady={(targetDir) => {
+            setPendingGuardrailsProjectDir(targetDir);
+            setActiveTab('config');
+          }}
+        />
       </div>
     </main>
   );

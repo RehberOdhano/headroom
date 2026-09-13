@@ -10,6 +10,7 @@ import {
   getDaemonGitActivity,
   getDaemonSessions,
   removeDaemonPermissionRule,
+  runDaemonBootstrap,
   searchDaemonSessions,
   updateDaemonAgentModel,
   updateDaemonClaudeMdContent,
@@ -246,5 +247,152 @@ describe('addDaemonPermissionRule / removeDaemonPermissionRule', () => {
       'http://127.0.0.1:4317/config/permissions',
       expect.objectContaining({ method: 'DELETE' }),
     );
+  });
+});
+
+describe('runDaemonBootstrap', () => {
+  it('POSTs the form fields (including a null document) to /bootstrap', async () => {
+    const result = {
+      createdFolder: true,
+      createdFiles: ['/x/CLAUDE.md'],
+      skippedFiles: [],
+      scaffoldSkipped: false,
+      gitInitialized: false,
+      verification: null,
+      inferredStack: 'none',
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(result));
+
+    const response = await runDaemonBootstrap(settings, {
+      targetDir: '/x',
+      mode: 'create',
+      name: 'my-project',
+      description: '',
+      technologies: [],
+      document: null,
+      initGit: false,
+      runVerification: false,
+    });
+
+    expect(response).toEqual({ ok: true, data: result });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:4317/bootstrap',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          targetDir: '/x',
+          mode: 'create',
+          name: 'my-project',
+          description: '',
+          technologies: [],
+          document: null,
+          initGit: false,
+          runVerification: false,
+        }),
+      }),
+    );
+  });
+
+  it('includes an attached document (with its encoding) in the request body', async () => {
+    const result = { createdFolder: false, createdFiles: ['/x/docs/brief.md'], skippedFiles: [] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(result));
+
+    await runDaemonBootstrap(settings, {
+      targetDir: '/x',
+      mode: 'existing',
+      name: 'my-project',
+      description: 'desc',
+      technologies: ['Python'],
+      document: { filename: 'brief.md', content: 'the brief', encoding: 'utf8' },
+      initGit: true,
+      runVerification: false,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:4317/bootstrap',
+      expect.objectContaining({
+        body: JSON.stringify({
+          targetDir: '/x',
+          mode: 'existing',
+          name: 'my-project',
+          description: 'desc',
+          technologies: ['Python'],
+          document: { filename: 'brief.md', content: 'the brief', encoding: 'utf8' },
+          initGit: true,
+          runVerification: false,
+        }),
+      }),
+    );
+  });
+
+  it('includes a base64-encoded document (e.g. a PDF) unchanged in the request body', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ createdFolder: false, createdFiles: [], skippedFiles: [] }),
+    );
+
+    await runDaemonBootstrap(settings, {
+      targetDir: '/x',
+      mode: 'create',
+      name: 'x',
+      description: '',
+      technologies: [],
+      document: { filename: 'brief.pdf', content: 'JVBERi0xLjQ=', encoding: 'base64' },
+      initGit: false,
+      runVerification: false,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:4317/bootstrap',
+      expect.objectContaining({ body: expect.stringContaining('"encoding":"base64"') }),
+    );
+  });
+
+  it('includes selected technologies in the request body', async () => {
+    const result = { createdFolder: true, createdFiles: ['/x/CLAUDE.md'], skippedFiles: [], scaffoldSkipped: false };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(result));
+
+    await runDaemonBootstrap(settings, {
+      targetDir: '/x',
+      mode: 'create',
+      name: 'rust-project',
+      description: '',
+      technologies: ['Rust'],
+      document: null,
+      initGit: false,
+      runVerification: false,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:4317/bootstrap',
+      expect.objectContaining({ body: expect.stringContaining('"technologies":["Rust"]') }),
+    );
+  });
+
+  it('returns invalid_response when the daemon reply does not match the schema', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ notWhatWeExpect: true }));
+    const response = await runDaemonBootstrap(settings, {
+      targetDir: '/x',
+      mode: 'create',
+      name: 'x',
+      description: '',
+      technologies: [],
+      document: null,
+      initGit: false,
+      runVerification: false,
+    });
+    // Every field on bootstrapResultSchema has a .default(), so an unrecognized body still
+    // parses to the empty-result shape rather than failing — this asserts that degrade path.
+    expect(response).toEqual({
+      ok: true,
+      data: {
+        createdFolder: false,
+        createdFiles: [],
+        skippedFiles: [],
+        scaffoldSkipped: false,
+        gitInitialized: false,
+        verification: null,
+        inferredStack: 'none',
+      },
+    });
   });
 });

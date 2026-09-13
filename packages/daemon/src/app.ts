@@ -23,14 +23,35 @@ import {
   writeClaudeMdContent,
   writePermissionRule,
 } from './adapters/claude-config.js';
+import { canCreateNewProjectDir, runBootstrap } from './adapters/bootstrap.js';
+import { detectExistingProject } from './adapters/project-detect.js';
 import { forbiddenOrigin, isPaired, markPaired, requireAuth } from './auth.js';
-import type { PermissionEffect } from '@headroom/shared';
+import type { BootstrapDocumentEncoding, BootstrapMode, PermissionEffect } from '@headroom/shared';
 import type { SessionWatcher } from './watcher.js';
 
 const PERMISSION_EFFECTS = ['allow', 'ask', 'deny'] as const;
 
 function isPermissionEffect(value: unknown): value is PermissionEffect {
   return typeof value === 'string' && (PERMISSION_EFFECTS as readonly string[]).includes(value);
+}
+
+const BOOTSTRAP_MODES = ['create', 'existing'] as const;
+
+function isBootstrapMode(value: unknown): value is BootstrapMode {
+  return typeof value === 'string' && (BOOTSTRAP_MODES as readonly string[]).includes(value);
+}
+
+function isBootstrapDocument(
+  value: unknown,
+): value is { filename: string; content: string; encoding: BootstrapDocumentEncoding } | null {
+  if (value === null || value === undefined) return true;
+  if (typeof value !== 'object') return false;
+  const candidate = value as { filename?: unknown; content?: unknown; encoding?: unknown };
+  return (
+    typeof candidate.filename === 'string' &&
+    typeof candidate.content === 'string' &&
+    (candidate.encoding === 'utf8' || candidate.encoding === 'base64')
+  );
 }
 
 const AGGREGATE_KINDS = ['project', 'day', 'model'] as const;
@@ -264,6 +285,80 @@ export function createApp(options: CreateAppOptions = {}) {
       return c.json({ error: 'invalid_body', message: 'projectDir must be an existing absolute directory' }, 400);
     }
     return c.json(removePermissionRule({ projectDir, pattern, effect }));
+  });
+
+  // Read-only, deterministic, no LLM — reads a handful of well-known config file shapes
+  // (package.json/pyproject.toml/go.mod, or a CLAUDE.md this tool wrote earlier) to prefill the
+  // "Use existing folder" form. Never writes anything.
+  app.get('/bootstrap/detect', (c) => {
+    const targetDir = c.req.query('targetDir');
+    if (!targetDir) return c.json({ error: 'invalid_query', message: '?targetDir is required' }, 400);
+    if (!isValidProjectDir(targetDir)) {
+      return c.json({ error: 'invalid_query', message: '?targetDir must be an existing absolute directory' }, 400);
+    }
+    return c.json(detectExistingProject(targetDir));
+  });
+
+  // No LLM. Writing files here is deterministic and offline, same as everywhere else in this
+  // adapter — the one exception is `runVerification: true`, which spawns the stack's real
+  // install/test commands and therefore does reach the network (npm/PyPI/Go module registries).
+  // That's a deliberate, explicit, opt-in carve-out of this daemon's usual "no network calls of
+  // its own" rule — see root CLAUDE.md and packages/daemon/CLAUDE.md.
+  app.post('/bootstrap', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const targetDir = body?.targetDir;
+    const mode = body?.mode;
+    const name = body?.name;
+    const description = body?.description ?? '';
+    const technologies = body?.technologies ?? [];
+    const document = body?.document ?? null;
+    const initGit = body?.initGit ?? false;
+    const runVerificationFlag = body?.runVerification ?? false;
+
+    if (
+      typeof targetDir !== 'string' ||
+      !isBootstrapMode(mode) ||
+      typeof name !== 'string' ||
+      !name.trim() ||
+      typeof description !== 'string' ||
+      !isBootstrapDocument(document) ||
+      !Array.isArray(technologies) ||
+      !technologies.every((tag: unknown): tag is string => typeof tag === 'string') ||
+      typeof initGit !== 'boolean' ||
+      typeof runVerificationFlag !== 'boolean'
+    ) {
+      return c.json(
+        {
+          error: 'invalid_body',
+          message:
+            'targetDir, mode, and a non-empty name are required; document, if present, must be {filename, content, encoding}; technologies, if present, must be an array of strings; initGit and runVerification must be booleans',
+        },
+        400,
+      );
+    }
+
+    if (mode === 'create' && !canCreateNewProjectDir(targetDir)) {
+      return c.json(
+        { error: 'invalid_body', message: 'targetDir must be an absolute path that does not already exist, with an existing parent directory' },
+        400,
+      );
+    }
+    if (mode === 'existing' && !isValidProjectDir(targetDir)) {
+      return c.json({ error: 'invalid_body', message: 'targetDir must be an existing absolute directory' }, 400);
+    }
+
+    return c.json(
+      await runBootstrap({
+        targetDir,
+        mode,
+        name: name.trim(),
+        description,
+        technologies,
+        document,
+        initGit,
+        runVerification: runVerificationFlag,
+      }),
+    );
   });
 
   if (options.watcher) {

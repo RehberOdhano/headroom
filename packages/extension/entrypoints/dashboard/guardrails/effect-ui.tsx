@@ -46,3 +46,20 @@ function DenyIcon() {
 export function effectIcon(effect: PermissionEffect) {
   return effect === 'allow' ? <AllowIcon /> : effect === 'ask' ? <AskIcon /> : <DenyIcon />;
 }
+
+/** A trash-can shape, deliberately not another X — DenyIcon above already is one, and a second
+ *  X next to it (for "remove the override entirely") would read as a second Deny at a glance. */
+export function RemoveIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path
+        d="M3.5 4.5h9M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M4.5 4.5l.6 8.4a1 1 0 0 0 1 .93h3.8a1 1 0 0 0 1-.93l.6-8.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

@@ -17,7 +17,7 @@ export default defineConfig({
     // (both in entrypoints/background.ts). Deliberately no "storage" — all persistent state
     // uses Dexie/IndexedDB (lib/db.ts), which needs no manifest permission; a leftover
     // "storage" entry from the initial scaffold went unused and got the Chrome Web Store
-    // listing rejected 2026-09-08 for "requesting but not using" it (root CLAUDE.md section 9).
+    // listing rejected 2026-09-08 for "requesting but not using" it.
     permissions: ['alarms', 'notifications'],
   },
 });

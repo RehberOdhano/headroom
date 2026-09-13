@@ -236,7 +236,7 @@
   <header class="masthead">
     <p class="eyebrow">Privacy Policy</p>
     <h1 class="heading">Claude Usage Companion</h1>
-    <p class="meta"><strong>Effective:</strong> September 8, 2026 &nbsp;·&nbsp; <strong>Applies to:</strong> the browser extension and its optional local daemon &nbsp;·&nbsp; <strong>Version:</strong> 0.1.2</p>
+    <p class="meta"><strong>Effective:</strong> September 13, 2026 &nbsp;·&nbsp; <strong>Applies to:</strong> the browser extension and its optional local daemon &nbsp;·&nbsp; <strong>Version:</strong> 0.1.3</p>
     <div class="summary">
       <p><strong>In short:</strong> nothing you do in this extension leaves your computer. There
       is no account, no server, no analytics, and no copy of your conversations anywhere but
@@ -318,10 +318,22 @@
         a <code class="mono">CLAUDE.md</code> file. Both a read and a write here stay a local
         file operation on your own machine — nothing is ever sent anywhere.
       </p>
+      <p>
+        The daemon also powers "New Project", which scaffolds a new folder (or fills in an
+        existing one) with starter files for the stack you pick, based only on file/dependency
+        patterns it recognizes — never by reading the content of any document you upload, which
+        is used only to copy into the generated project, not interpreted. This writes new files
+        to the folder you choose, and can optionally run <code class="mono">git init</code>. If
+        you turn on its "verify" step, it runs that stack's own real install/build/test commands
+        (for example <code class="mono">pnpm install</code>, <code class="mono">uv sync</code>,
+        <code class="mono">go build</code>) so those specific commands do reach the network — on
+        your explicit, one-time request, the same as if you'd typed them into a terminal
+        yourself, never automatically and never for any other purpose.
+      </p>
       <p>This program:</p>
       <ul>
         <li>Runs only on your machine, listening only on <code class="mono">127.0.0.1</code> — never reachable from the internet or any other device.</li>
-        <li>Never makes a network request of its own; it only reads/writes local files and answers requests from your browser extension.</li>
+        <li>Makes no network request of its own; the only network activity it ever causes is the stack's own install/build/test commands during New Project's opt-in "verify" step, described above.</li>
         <li>Requires a randomly generated access token before the extension can talk to it at all.</li>
       </ul>
       <p>You can remove it at any time; instructions are in the project's README.</p>
