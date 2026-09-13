@@ -24,15 +24,34 @@ import { SkillsSection } from './guardrails/SkillsSection.tsx';
 /** Daemon-backed config visibility (permission rules, hooks, skills, CLAUDE.md docs) plus
  *  permission-rule overrides — writes go only to a project's `.claude/settings.local.json`, never
  *  the shared `settings.json` or the global one (packages/daemon/src/adapters/claude-config.ts). */
-export function ConfigTab() {
+export function ConfigTab({
+  pendingProjectDir,
+  onPendingProjectDirApplied,
+}: {
+  /** Set by the New Project tab's "Go to Guardrails" button (via App.tsx) right after a
+   *  successful setup — jumps straight to that project instead of leaving the user to re-type
+   *  the path they just typed once already. */
+  pendingProjectDir?: string | null;
+  onPendingProjectDirApplied?: () => void;
+} = {}) {
   return (
     <DaemonGate hint="Connect the local daemon in the extension's options page to see and manage Claude Code's permissions, hooks, skills, and CLAUDE.md docs here.">
-      {(settings) => <ConfigContent settings={settings} />}
+      {(settings) => (
+        <ConfigContent settings={settings} pendingProjectDir={pendingProjectDir} onPendingProjectDirApplied={onPendingProjectDirApplied} />
+      )}
     </DaemonGate>
   );
 }
 
-function ConfigContent({ settings }: { settings: Settings }) {
+function ConfigContent({
+  settings,
+  pendingProjectDir,
+  onPendingProjectDirApplied,
+}: {
+  settings: Settings;
+  pendingProjectDir?: string | null;
+  onPendingProjectDirApplied?: () => void;
+}) {
   const [projects, setProjects] = useState<KnownProject[]>([]);
   const [selectedProject, setSelectedProject] = useState('');
   const [manualProjectDir, setManualProjectDir] = useState('');
@@ -70,6 +89,17 @@ function ConfigContent({ settings }: { settings: Settings }) {
       if (result.ok) setProjects(result.data.projects);
     });
   }, [settings.daemonUrl, settings.daemonToken]);
+
+  // Applied once per incoming value, then immediately cleared by the caller (App.tsx) — this tab
+  // stays mounted across tab switches (see App.tsx's `hidden`-toggling pattern), so a plain
+  // initial-state prop would only ever take effect on the very first mount, not on a second
+  // "Go to Guardrails" click for a different project later in the same session.
+  useEffect(() => {
+    if (!pendingProjectDir) return;
+    useManualPath(pendingProjectDir);
+    onPendingProjectDirApplied?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingProjectDir]);
 
   /** `checkDrift` is only ever true from the project-switch effect below, never from a
    *  permission-edit's own refresh — the user just made that change themselves, so re-flagging

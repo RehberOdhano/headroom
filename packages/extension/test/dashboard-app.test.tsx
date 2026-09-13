@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import backgroundDefinition from '../entrypoints/background.js';
 import App from '../entrypoints/dashboard/App.tsx';
 import { db, type LimitSnapshotRecord } from '../lib/db.js';
 import { extensionMessenger } from '../lib/messaging.js';
+import { jsonResponse } from './helpers.js';
 
 function bar(percent: number) {
   return { percent, resetsAt: '2026-08-30T00:00:00Z', severity: 'normal', isActive: true };
@@ -202,6 +203,59 @@ describe('dashboard App', () => {
       expect(await screen.findAllByText('Usage credits')).toHaveLength(1);
       expect(await screen.findByText('Spent this month')).toBeTruthy();
       expect(await screen.findByText('Balance')).toBeTruthy();
+    });
+  });
+
+  describe('New Project → Guardrails handoff', () => {
+    it('"Go to Guardrails" switches tabs and pre-fills the Guardrails project picker', async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        daemonUrl: 'http://127.0.0.1:4317',
+        daemonToken: 'test-token',
+      });
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/bootstrap')) {
+          return jsonResponse({ createdFolder: true, createdFiles: ['/tmp/x/CLAUDE.md'], skippedFiles: [] });
+        }
+        if (requested.includes('/config/projects')) return jsonResponse({ projects: [] });
+        if (requested.includes('/config')) {
+          return jsonResponse({
+            global: { path: '/x', exists: false, defaultMode: null, allow: [], ask: [], deny: [] },
+            project: null,
+            local: null,
+            hooks: [],
+            skills: [],
+            agents: [],
+          });
+        }
+        throw new Error(`unexpected fetch: ${requested}`);
+      });
+
+      render(<App />);
+
+      fireEvent.click(screen.getByRole('tab', { name: 'New Project' }));
+      // Scoped to the New Project tabpanel — its target-dir field and Guardrails' own manual-path
+      // field share the same placeholder text, and every tab stays mounted simultaneously.
+      const panels = screen.getAllByRole('tabpanel', { hidden: true });
+      const newProjectPanel = within(panels[panels.length - 1]!);
+
+      fireEvent.change(await newProjectPanel.findByPlaceholderText('/absolute/path/to/project'), { target: { value: '/tmp/x' } });
+      fireEvent.change(newProjectPanel.getByPlaceholderText('my-project'), { target: { value: 'x' } });
+      fireEvent.click(newProjectPanel.getByText('Set up project'));
+      await newProjectPanel.findByText(/1 file written/);
+
+      fireEvent.click(newProjectPanel.getByText('Go to Guardrails →'));
+
+      const guardrailsPanel = within(panels[panels.length - 2]!); // config tabpanel, just before new-project
+      expect(panels[panels.length - 1]!.hasAttribute('hidden')).toBe(true); // New Project, now hidden
+      expect(await guardrailsPanel.findByText('Manual path active: /tmp/x')).toBeTruthy();
+      // Regression check: the visible input field itself must show the path too, not just the
+      // "Manual path active" summary text above it — ProjectPicker's own draft state used to be
+      // seeded from `manualProjectDir` only once, on mount, so a path set from outside (this
+      // handoff) never reached the field the user actually sees. New Project's own (still
+      // mounted, now-hidden) field also shows "/tmp/x", so this must stay scoped to Guardrails.
+      const guardrailsPathInput = guardrailsPanel.getByPlaceholderText('/absolute/path/to/project') as HTMLInputElement;
+      expect(guardrailsPathInput.value).toBe('/tmp/x');
     });
   });
 });

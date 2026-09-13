@@ -593,6 +593,130 @@ body {
   box-shadow: 0 0 0 3px var(--color-accent-bg);
 }
 
+/* Stacked form fields (New project tab) — same visual weight as Guardrails' spend-limit input
+   (bold title, spacious full-width field) rather than the compact .search-input used for inline
+   filters/search bars. */
+.form-field {
+  margin-bottom: var(--space-4);
+}
+
+.form-field-title {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin-bottom: var(--space-2);
+}
+
+.form-field-input {
+  width: 100%;
+  height: 44px;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.form-field-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-bg);
+}
+
+/* Optional-action toggles (New project tab: apply protections, init git, verify) */
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-3);
+  cursor: pointer;
+}
+
+.checkbox-row input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+/* Captured stdout/stderr from a verification step — bounded height since an install log can be
+   long, monospace to stay legible as terminal output. */
+.verification-output {
+  max-height: 220px;
+  overflow: auto;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  white-space: pre-wrap;
+}
+
+/* New project tab: "Technologies" pill picker — selected tags plus filtered suggestions as you
+   type. Reuses the accent-tinted-pill look, distinct from `.segmented`'s neutral pill (that one's
+   a mode toggle, this one's a removable multi-select tag). */
+.tech-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.tech-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 4px 12px;
+  background: var(--color-accent-bg);
+  color: var(--color-accent-strong);
+  border-radius: var(--radius-pill);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.tech-tag button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 50%;
+}
+
+.tech-tag button:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.tech-tag-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.tech-tag-suggestion {
+  appearance: none;
+  border: 1px dashed var(--color-border-strong);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.tech-tag-suggestion:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
 .result-card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -713,13 +837,6 @@ body {
   margin-top: 2px;
 }
 
-.rule-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
 /* Icon-only override buttons (Allow/Ask/Deny) — same .btn base, just square and centered on a
    14px icon instead of "Override: Allow" ×3 per row. Border tints toward the effect's own color
    on hover/focus so the icon-only button is still easy to tell apart at a glance. */
@@ -733,8 +850,8 @@ body {
   flex-shrink: 0;
 }
 
-/* The three override icons as one atomic group — never wraps internally, even when the outer
-   .rule-actions row is tight enough to wrap the (separate) "Remove" button onto its own line. */
+/* The Allow/Ask/Deny override icons plus the Remove icon (when a local override exists), all in
+   one row that never wraps internally. */
 .rule-actions-icons {
   display: flex;
   flex-wrap: nowrap;

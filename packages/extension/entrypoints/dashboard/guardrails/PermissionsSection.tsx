@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { KNOWN_RISKY_PATTERNS, type ClaudeConfigSnapshot, type PermissionEffect, type SettingsLayer } from '@headroom/shared';
 import { findInLayer, matchesQuery, resolveEffective } from '../../../lib/guardrails.js';
-import { effectIcon, effectLabel, EFFECTS } from './effect-ui.tsx';
+import { effectIcon, effectLabel, EFFECTS, RemoveIcon } from './effect-ui.tsx';
 
 function LayerRules({
   title,
@@ -198,36 +198,30 @@ export function PermissionsSection({
                     </td>
                     {projectDir && (
                       <td>
-                        <div className="rule-actions">
-                          {/* A nested nowrap group, not flat siblings of "Remove" in one wrapping
-                              flex container — flex-wrap breaks between top-level items, so three
-                              flat buttons wrapped at 2-then-1 instead of staying together. Grouped
-                              like this, the trio moves to a new line as one unit if it must, but
-                              never splits apart. */}
-                          <div className="rule-actions-icons">
-                            {EFFECTS.map((effect) => (
-                              <button
-                                key={effect}
-                                type="button"
-                                className={`btn btn-icon effect-btn-${effect}`}
-                                title={`Override: ${effectLabel(effect)}`}
-                                aria-label={`Override ${known.label}: ${effectLabel(effect)}`}
-                                disabled={isBusy || (resolved?.layer === 'local' && resolved.effect === effect)}
-                                onClick={() => onOverride(known.pattern, effect)}
-                              >
-                                {effectIcon(effect)}
-                              </button>
-                            ))}
-                          </div>
+                        <div className="rule-actions-icons">
+                          {EFFECTS.map((effect) => (
+                            <button
+                              key={effect}
+                              type="button"
+                              className={`btn btn-icon effect-btn-${effect}`}
+                              title={`Override: ${effectLabel(effect)}`}
+                              aria-label={`Override ${known.label}: ${effectLabel(effect)}`}
+                              disabled={isBusy || (resolved?.layer === 'local' && resolved.effect === effect)}
+                              onClick={() => onOverride(known.pattern, effect)}
+                            >
+                              {effectIcon(effect)}
+                            </button>
+                          ))}
                           {localEffect && (
                             <button
                               type="button"
-                              className="btn"
+                              className="btn btn-icon"
                               title="Remove local override"
+                              aria-label={`Remove local override for ${known.label}`}
                               disabled={isBusy}
                               onClick={() => onRemoveLocal(known.pattern, localEffect)}
                             >
-                              Remove
+                              <RemoveIcon />
                             </button>
                           )}
                         </div>

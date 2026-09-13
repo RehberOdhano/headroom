@@ -421,6 +421,244 @@ describe('daemon app', () => {
     });
   });
 
+  describe('POST /bootstrap', () => {
+    let parent: string;
+
+    beforeEach(() => {
+      parent = mkdtempSync(path.join(tmpdir(), 'headroom-app-bootstrap-'));
+    });
+
+    afterEach(() => {
+      rmSync(parent, { recursive: true, force: true });
+    });
+
+    it('creates a new project folder with a scaffold inferred from the picked tags, and a CLAUDE.md', async () => {
+      const targetDir = path.join(parent, 'new-project');
+      const res = await createApp().request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetDir, mode: 'create', name: 'New Project', description: 'A test.', technologies: ['TypeScript'] }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.createdFolder).toBe(true);
+      expect(body.createdFiles.some((f: string) => f.endsWith('CLAUDE.md'))).toBe(true);
+      expect(body.createdFiles.some((f: string) => f.endsWith('package.json'))).toBe(true);
+      expect(body.inferredStack).toBe('node-typescript');
+    });
+
+    it('rejects create mode when the target already exists, with 400', async () => {
+      const res = await createApp().request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetDir: parent, mode: 'create', name: 'x', description: '' }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects existing mode when the target does not exist, with 400', async () => {
+      const res = await createApp().request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetDir: path.join(parent, 'nope'), mode: 'existing', name: 'x', description: '' }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a missing name with 400', async () => {
+      const res = await createApp().request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetDir: path.join(parent, 'x'), mode: 'create', description: '' }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('records unmatched tags in CLAUDE.md and infers "other" when none match a built-in template', async () => {
+      const targetDir = path.join(parent, 'rust-project');
+      const res = await createApp().request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetDir, mode: 'create', name: 'rust-project', description: '', technologies: ['Rust'] }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.inferredStack).toBe('other');
+
+      const { readFileSync } = await import('node:fs');
+      const claudeMd = readFileSync(path.join(targetDir, 'CLAUDE.md'), 'utf-8');
+      expect(claudeMd).toContain('Tech stack: Rust');
+      expect(claudeMd).toContain('No built-in scaffold template matches this stack yet');
+    });
+
+    it('saves an uploaded document under docs/ and never overwrites it on a second run', async () => {
+      const targetDir = path.join(parent, 'with-doc');
+      const app = createApp();
+      const first = await app.request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetDir,
+          mode: 'create',
+          name: 'with-doc',
+          description: '',
+          document: { filename: 'brief.md', content: 'original brief', encoding: 'utf8' },
+        }),
+      });
+      expect(first.status).toBe(200);
+
+      const second = await app.request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetDir,
+          mode: 'existing',
+          name: 'with-doc',
+          description: '',
+          document: { filename: 'brief.md', content: 'a different brief', encoding: 'utf8' },
+        }),
+      });
+      expect(second.status).toBe(200);
+      const secondBody = await second.json();
+      expect(secondBody.skippedFiles.some((f: string) => f.endsWith('brief.md'))).toBe(true);
+
+      const { readFileSync } = await import('node:fs');
+      expect(readFileSync(path.join(targetDir, 'docs', 'brief.md'), 'utf-8')).toBe('original brief');
+    });
+
+    it('initializes a real git repo when initGit is true', async () => {
+      const targetDir = path.join(parent, 'git-project');
+      const res = await createApp().request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetDir, mode: 'create', name: 'git-project', description: '', initGit: true }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.gitInitialized).toBe(true);
+
+      const { existsSync } = await import('node:fs');
+      expect(existsSync(path.join(targetDir, '.git'))).toBe(true);
+    });
+
+    it('defaults initGit and runVerification to false, never touching git or running any command', async () => {
+      const targetDir = path.join(parent, 'plain-project');
+      const res = await createApp().request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetDir, mode: 'create', name: 'plain-project', description: '' }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.gitInitialized).toBe(false);
+      expect(body.verification).toBeNull();
+
+      const { existsSync } = await import('node:fs');
+      expect(existsSync(path.join(targetDir, '.git'))).toBe(false);
+    });
+
+    it('rejects a non-boolean initGit with 400', async () => {
+      const res = await createApp().request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetDir: path.join(parent, 'x'), mode: 'create', name: 'x', description: '', initGit: 'yes' }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('records technologies in CLAUDE.md when present', async () => {
+      const targetDir = path.join(parent, 'tagged-project');
+      const res = await createApp().request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetDir,
+          mode: 'create',
+          name: 'tagged-project',
+          description: '',
+          technologies: ['React', 'PostgreSQL'],
+        }),
+      });
+      expect(res.status).toBe(200);
+
+      const { readFileSync } = await import('node:fs');
+      expect(readFileSync(path.join(targetDir, 'CLAUDE.md'), 'utf-8')).toContain('Tech stack: React, PostgreSQL');
+    });
+
+    it('rejects a non-array technologies with 400', async () => {
+      const res = await createApp().request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetDir: path.join(parent, 'x'), mode: 'create', name: 'x', description: '', technologies: 'React' }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a technologies array containing a non-string with 400', async () => {
+      const res = await createApp().request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetDir: path.join(parent, 'x'),
+          mode: 'create',
+          name: 'x',
+          description: '',
+          technologies: ['React', 42],
+        }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a document missing a valid encoding with 400', async () => {
+      const res = await createApp().request('/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetDir: path.join(parent, 'x'),
+          mode: 'create',
+          name: 'x',
+          description: '',
+          document: { filename: 'brief.md', content: 'hi' },
+        }),
+      });
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('GET /bootstrap/detect', () => {
+    let parent: string;
+
+    beforeEach(() => {
+      parent = mkdtempSync(path.join(tmpdir(), 'headroom-app-detect-'));
+    });
+
+    afterEach(() => {
+      rmSync(parent, { recursive: true, force: true });
+    });
+
+    it('detects name, description, and technologies from a real package.json, collapsing the implied Node.js tag since React is more specific', async () => {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(
+        path.join(parent, 'package.json'),
+        JSON.stringify({ name: 'my-tool', description: 'does things', dependencies: { react: '^18.0.0' } }),
+      );
+
+      const res = await createApp().request(`/bootstrap/detect?targetDir=${encodeURIComponent(parent)}`);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ name: 'my-tool', description: 'does things', technologies: ['React'] });
+    });
+
+    it('rejects a missing targetDir with 400', async () => {
+      const res = await createApp().request('/bootstrap/detect');
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a nonexistent targetDir with 400', async () => {
+      const res = await createApp().request(`/bootstrap/detect?targetDir=${encodeURIComponent(path.join(parent, 'nope'))}`);
+      expect(res.status).toBe(400);
+    });
+  });
+
   describe('auth', () => {
     const TOKEN = 'test-token-value';
 

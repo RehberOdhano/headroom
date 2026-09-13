@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { KnownProject } from '@headroom/shared';
 
 export function ProjectPicker({
@@ -20,6 +20,15 @@ export function ProjectPicker({
   // exactly what produced "sometimes it takes a while, sometimes nothing happens": the *last*
   // keystroke's request wins, so the result depended entirely on typing speed vs. fetch latency.
   const [draft, setDraft] = useState(manualProjectDir);
+
+  // Resyncs the visible field whenever `manualProjectDir` changes from *outside* this component
+  // (e.g. the New Project tab's "Go to Guardrails" handoff, via Config.tsx's pendingProjectDir) —
+  // `submit`/`clear` below already keep `draft` in step for changes that originate here, but
+  // this component has no way to distinguish "the parent just set a new path" from "the user is
+  // mid-keystroke" other than treating the prop as the source of truth on every change.
+  useEffect(() => {
+    setDraft(manualProjectDir);
+  }, [manualProjectDir]);
 
   function submit(event: React.FormEvent): void {
     event.preventDefault();
