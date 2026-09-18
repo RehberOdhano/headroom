@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { serve } from '@hono/node-server';

@@ -7,7 +7,7 @@ import backgroundDefinition from '../entrypoints/background.js';
 import { CliTab, SearchTab } from '../entrypoints/dashboard/Cli.tsx';
 import { db } from '../lib/db.js';
 import { extensionMessenger } from '../lib/messaging.js';
-import { jsonResponse, zeroTotals } from './helpers.js';
+import { daemonSession, jsonResponse, zeroTotals } from './helpers.js';
 
 describe('CliTab / SearchTab', () => {
   beforeEach(async () => {
@@ -365,6 +365,35 @@ describe('CliTab / SearchTab', () => {
       // Both sub-views are mounted throughout — switching just flips which one is hidden.
       expect(overviewPanel.hasAttribute('hidden')).toBe(true);
       expect(screen.getByText('Sessions nearing cleanup')).toBeTruthy();
+    });
+
+    it('shows the busiest day/hour bucket on the "By time of day" heatmap sub-view', async () => {
+      // Constructed with the local-time `Date` constructor so this is deterministic regardless
+      // of the test runner's own timezone — see lib/heatmap.ts's tests for the same approach.
+      const busyLocal = new Date(2026, 7, 24, 21, 0); // 2026-08-24 is a Monday.
+      const quietLocal = new Date(2026, 7, 24, 9, 0);
+
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
+        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: {}, totals: zeroTotals });
+        if (requested.includes('/aggregate?by=model')) return jsonResponse({ models: [] });
+        if (requested.includes('/sessions')) {
+          return jsonResponse({
+            sessions: [
+              daemonSession({ sessionId: 'quiet', totalCost: 0.5, lastActivity: quietLocal.toISOString() }),
+              daemonSession({ sessionId: 'busy', totalCost: 9, lastActivity: busyLocal.toISOString() }),
+            ],
+            totals: zeroTotals,
+          });
+        }
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+      fireEvent.click(await screen.findByRole('button', { name: 'By time of day' }));
+
+      expect(await screen.findByText(/Priciest: Mon around 9p \(\$9\.00 across 1 session\)/)).toBeTruthy();
     });
   });
 });

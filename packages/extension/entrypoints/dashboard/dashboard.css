@@ -420,6 +420,57 @@ body {
   opacity: 0.5;
 }
 
+/* Cost-by-time-of-day heatmap (CLI Attribution > By time of day) */
+.heatmap-wrap {
+  overflow-x: auto;
+}
+
+.heatmap-table {
+  border-collapse: separate;
+  border-spacing: 2px;
+}
+
+.heatmap-hour-label {
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: var(--color-text-faint);
+  text-align: center;
+  padding: 0 2px 4px;
+}
+
+.heatmap-day-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  text-align: right;
+  padding-right: var(--space-2);
+  white-space: nowrap;
+}
+
+.heatmap-cell {
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+}
+
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--space-3);
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+}
+
+.heatmap-legend-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  border: 1px solid var(--color-border);
+}
+
 /* Forecast line */
 .forecast-line {
   display: flex;

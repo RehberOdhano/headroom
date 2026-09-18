@@ -57,11 +57,9 @@ attribution, cross-project session search, and retention warnings. It never comm
 claude.ai, and claude.ai never communicates with it. It is stateless and read-only — all
 persistent state lives in the extension.
 
-Not yet published to npm; run it from the checkout:
-
 ```sh
-cd packages/daemon
-pnpm exec tsx src/cli.ts install    # generates a token, registers a login-time service, starts it
+npm install -g @rehberodhano/claude-usage-companion-daemon
+claude-usage-daemon install    # generates a token, registers a login-time service, starts it
 ```
 
 No token to copy or paste: open the extension's options page and it pairs with the daemon
@@ -74,7 +72,15 @@ field in the options page also accepts a pasted token directly, for edge cases.
 `install` registers a background service so the daemon survives a reboot: a launchd agent on
 macOS, a systemd `--user` unit on Linux, or a Task Scheduler task on Windows. On Linux, also run
 `loginctl enable-linger $USER` so it survives logging out. To run it in the foreground instead,
-use `pnpm exec tsx src/cli.ts start`.
+use `claude-usage-daemon start`.
+
+Running from a checkout instead (contributing, or before the package is published) works the
+same way, just via `pnpm`:
+
+```sh
+cd packages/daemon
+pnpm exec tsx src/cli.ts install
+```
 
 To uninstall:
 
@@ -88,8 +94,9 @@ The token file at `~/.config/claude-usage/token` can be deleted afterward as wel
 
 ### Statusline (optional)
 
-`packages/daemon/bin/statusline.mjs` is a self-contained script for Claude Code's `statusLine`
-hook. It prints three segments:
+`claude-usage-statusline` (installed alongside `claude-usage-daemon` by the npm package —
+`packages/daemon/bin/statusline.mjs` when running from a checkout) is a self-contained script for
+Claude Code's `statusLine` hook. It prints three segments:
 
 - `Session: <pct>%` and `Weekly: <pct>%`, each with a reset countdown — read directly from
   Claude Code's own stdin payload (`rate_limits.five_hour` / `rate_limits.seven_day`, Pro/Max
@@ -98,9 +105,10 @@ hook. It prints three segments:
 - `Today: <n> Tokens` — daemon-sourced CLI token total; prints nothing if the daemon isn't
   installed.
 
-Point `statusLine` in `~/.claude/settings.json` directly at the script, or pipe your existing
-statusline script's stdin through `node /path/to/packages/daemon/bin/statusline.mjs` and append
-its output as an additional segment.
+Point `statusLine` in `~/.claude/settings.json` directly at `claude-usage-statusline` (or its
+absolute path, e.g.
+`$(npm root -g)/@rehberodhano/claude-usage-companion-daemon/bin/statusline.mjs`), or pipe your
+existing statusline script's stdin through it and append its output as an additional segment.
 
 ## Features
 

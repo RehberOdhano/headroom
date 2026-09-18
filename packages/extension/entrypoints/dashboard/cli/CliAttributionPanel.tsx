@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import type { Settings } from '../../../lib/protocol.js';
 import { CliOverview, RECENT_DAYS } from './CliOverview.tsx';
+import { CostHeatmap } from './CostHeatmap.tsx';
 import { PatternsContent } from './PatternsContent.tsx';
 import { TopUsageContent } from './TopUsageContent.tsx';
 
-type CliSubView = 'overview' | 'top' | 'patterns';
+type CliSubView = 'overview' | 'top' | 'heatmap' | 'patterns';
 const CLI_SUBVIEWS: { key: CliSubView; label: string }[] = [
   { key: 'overview', label: 'Overview' },
   { key: 'top', label: 'Top usage' },
+  { key: 'heatmap', label: 'By time of day' },
   { key: 'patterns', label: 'Patterns' },
 ];
 
@@ -15,7 +17,7 @@ const CLI_SUBVIEWS: { key: CliSubView; label: string }[] = [
  * One card, one header, one segmented sub-nav (same pattern as the History window selector on
  * the Usage & Forecast tab) — replaces three separately-headed, always-stacked cards
  * (totals+tables, leaderboards, skill/command/subagent patterns) that had grown tall enough to
- * bury each other in scroll. All three sub-views stay mounted and are toggled via `hidden`, the
+ * bury each other in scroll. All sub-views stay mounted and are toggled via `hidden`, the
  * same "don't lose state / don't refetch on switch" approach the top-level tabs already use.
  */
 export function CliAttributionPanel({ settings }: { settings: Settings }) {
@@ -46,6 +48,9 @@ export function CliAttributionPanel({ settings }: { settings: Settings }) {
       </div>
       <div hidden={view !== 'top'}>
         <TopUsageContent settings={settings} />
+      </div>
+      <div hidden={view !== 'heatmap'}>
+        <CostHeatmap settings={settings} />
       </div>
       <div hidden={view !== 'patterns'}>
         <PatternsContent settings={settings} />
