@@ -1,11 +1,19 @@
 {
   "name": "@headroom/daemon",
-  "version": "0.1.1",
+  "version": "0.1.2",
+  "description": "Optional local daemon for Claude Usage Companion — unlocks CLI attribution, session search, retention warnings, and Guardrails.",
   "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RehberOdhano/headroom.git",
+    "directory": "packages/daemon"
+  },
+  "homepage": "https://github.com/RehberOdhano/headroom#readme",
+  "bugs": "https://github.com/RehberOdhano/headroom/issues",
   "publishConfig": {
     "access": "public",
     "name": "@rehberodhano/claude-usage-companion-daemon"
@@ -21,7 +29,7 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsup",
-    "prepublishOnly": "pnpm run build",
+    "prepack": "pnpm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
