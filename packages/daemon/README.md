@@ -12,6 +12,8 @@ the [main repo](https://github.com/RehberOdhano/headroom) for the full source an
 
 ## Install
 
+Requires Node.js ≥20.
+
 ```sh
 npm install -g @rehberodhano/claude-usage-companion-daemon
 claude-usage-daemon install    # generates a token, registers a login-time service, starts it
@@ -24,6 +26,12 @@ automatically within about a minute (a **Check now** button forces this immediat
 macOS, a systemd `--user` unit on Linux, or a Task Scheduler task on Windows. On Linux, also run
 `loginctl enable-linger $USER` so it survives logging out. To run it in the foreground instead,
 use `claude-usage-daemon start`.
+
+**Windows note:** the Task Scheduler registration path is unit-tested (mocked command
+execution) but hasn't yet been verified end-to-end on a real Windows machine, unlike the macOS
+and Linux paths. If `install` doesn't work as expected there, please open an issue on the
+[main repo](https://github.com/RehberOdhano/headroom/issues) — running `claude-usage-daemon
+start` in the foreground works regardless of platform.
 
 ## What it unlocks
 
