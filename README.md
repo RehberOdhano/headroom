@@ -57,6 +57,8 @@ attribution, cross-project session search, and retention warnings. It never comm
 claude.ai, and claude.ai never communicates with it. It is stateless and read-only — all
 persistent state lives in the extension.
 
+Requires Node.js ≥20.
+
 ```sh
 npm install -g @rehberodhano/claude-usage-companion-daemon
 claude-usage-daemon install    # generates a token, registers a login-time service, starts it
@@ -74,8 +76,12 @@ macOS, a systemd `--user` unit on Linux, or a Task Scheduler task on Windows. On
 `loginctl enable-linger $USER` so it survives logging out. To run it in the foreground instead,
 use `claude-usage-daemon start`.
 
-Running from a checkout instead (contributing, or before the package is published) works the
-same way, just via `pnpm`:
+**Windows note:** the Task Scheduler registration path is unit-tested (mocked command
+execution) but hasn't yet been verified end-to-end on a real Windows machine, unlike the macOS
+and Linux paths. If `install` doesn't work as expected there, please open an issue — running
+`claude-usage-daemon start` in the foreground works regardless of platform.
+
+Running from a checkout instead (e.g. contributing) works the same way, just via `pnpm`:
 
 ```sh
 cd packages/daemon
