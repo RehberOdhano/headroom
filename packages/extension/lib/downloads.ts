@@ -11,6 +11,10 @@ export function downloadMarkdown(filename: string, content: string): void {
   triggerDownload(filename, new Blob([content], { type: 'text/markdown' }));
 }
 
+export function downloadJson(filename: string, data: unknown): void {
+  triggerDownload(filename, new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+}
+
 /** Quotes a field only when it needs it (contains a comma, quote, or newline) — the minimum
  *  CSV escaping needed for data that's already just numbers and project paths, no dependency
  *  needed for something this small. */

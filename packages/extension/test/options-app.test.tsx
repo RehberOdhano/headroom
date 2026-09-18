@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import backgroundDefinition from '../entrypoints/background.js';
 import App from '../entrypoints/options/App.tsx';
+import { buildBackup, type BackupFile } from '../lib/backup.js';
 import { db } from '../lib/db.js';
 import { DEFAULT_SETTINGS } from '../lib/settings.js';
 import { extensionMessenger } from '../lib/messaging.js';
@@ -15,6 +16,7 @@ describe('options App', () => {
     await db.rawRecords.clear();
     await db.limitSnapshots.clear();
     await db.meta.clear();
+    await db.configFingerprints.clear();
     extensionMessenger.removeAllListeners();
     backgroundDefinition.main();
 
@@ -301,5 +303,108 @@ describe('options App', () => {
     fireEvent.click(await screen.findByText('Check now'));
 
     expect(await screen.findByText(/Already paired with another extension/)).toBeTruthy();
+  });
+});
+
+describe('backup and restore', () => {
+  beforeEach(async () => {
+    fakeBrowser.reset();
+    await db.rawRecords.clear();
+    await db.limitSnapshots.clear();
+    await db.meta.clear();
+    await db.configFingerprints.clear();
+    extensionMessenger.removeAllListeners();
+    backgroundDefinition.main();
+
+    URL.createObjectURL = vi.fn(() => 'blob:mock');
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  /** jsdom's `File` doesn't implement `.text()` (unlike every real browser) — stub it for the
+   *  one test below that needs to feed a real file through the restore flow, same spirit as the
+   *  existing Blob-constructor stub above for the export button. */
+  function selectBackupFile(input: HTMLInputElement, backup: BackupFile) {
+    const file = new File([JSON.stringify(backup)], 'backup.json', { type: 'application/json' });
+    const originalText = File.prototype.text;
+    File.prototype.text = function (this: File) {
+      return this === file ? Promise.resolve(JSON.stringify(backup)) : originalText.call(this);
+    };
+    fireEvent.change(input, { target: { files: [file] } });
+    return () => {
+      File.prototype.text = originalText;
+    };
+  }
+
+  it('previews a valid backup file and applies it on confirm, without touching the existing daemon token', async () => {
+    await extensionMessenger.sendMessage('updateSettings', { daemonToken: 'existing-token', badgeEnabled: true });
+    await db.limitSnapshots.add({
+      capturedAt: '2026-08-20T00:00:00Z',
+      source: 'usage',
+      session: { percent: 5, resetsAt: '2026-08-21T00:00:00Z', severity: 'normal', isActive: true },
+      weekly: null,
+    });
+
+    render(<App />);
+    await screen.findByText('Settings');
+
+    const backup = buildBackup({
+      limitSnapshots: [
+        {
+          id: 1,
+          capturedAt: '2026-08-20T00:00:00Z',
+          source: 'usage',
+          session: { percent: 5, resetsAt: '2026-08-21T00:00:00Z', severity: 'normal', isActive: true },
+          weekly: null,
+        },
+        {
+          id: 2,
+          capturedAt: '2026-08-29T10:00:00Z',
+          source: 'usage',
+          session: null,
+          weekly: { percent: 40, resetsAt: '2026-09-01T00:00:00Z', severity: 'normal', isActive: true },
+        },
+      ],
+      configFingerprints: [],
+      settings: { ...DEFAULT_SETTINGS, daemonToken: 'stale-backup-token', badgeEnabled: false },
+    });
+
+    const fileInput = await screen.findByLabelText('Restore backup file');
+    const restoreTextStub = selectBackupFile(fileInput as HTMLInputElement, backup);
+
+    try {
+      expect(await screen.findByText(/1 new snapshot/)).toBeTruthy();
+      fireEvent.click(screen.getByText('Restore'));
+
+      expect(await screen.findByText(/Restored 1 snapshot/)).toBeTruthy();
+    } finally {
+      restoreTextStub();
+    }
+
+    expect(await db.limitSnapshots.count()).toBe(2);
+    const settings = await extensionMessenger.sendMessage('getSettings');
+    expect(settings.badgeEnabled).toBe(false); // restored
+    expect(settings.daemonToken).toBe('existing-token'); // never clobbered by the backup's stripped token
+  });
+
+  it('shows an error and no preview for a file that is not a headroom backup', async () => {
+    render(<App />);
+    await screen.findByText('Settings');
+
+    const fileInput = await screen.findByLabelText('Restore backup file');
+    const file = new File(['not json'], 'backup.json', { type: 'application/json' });
+    const originalText = File.prototype.text;
+    File.prototype.text = () => Promise.resolve('not json');
+
+    try {
+      fireEvent.change(fileInput, { target: { files: [file] } });
+      expect(await screen.findByText('That file is not valid JSON.')).toBeTruthy();
+      expect(screen.queryByText('Restore')).toBeNull();
+    } finally {
+      File.prototype.text = originalText;
+    }
   });
 });
