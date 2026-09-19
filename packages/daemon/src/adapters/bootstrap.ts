@@ -109,11 +109,17 @@ function verificationEnv(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: [...extraDirs, process.env.PATH ?? ''].join(path.delimiter) };
 }
 
-function runVerificationCommand(command: string, cwd: string): Promise<BootstrapVerificationStep> {
+export function runVerificationCommand(command: string, cwd: string): Promise<BootstrapVerificationStep> {
   const [bin, ...args] = command.split(' ');
   return new Promise((resolve) => {
     execFile(bin!, args, { cwd, env: verificationEnv(), timeout: VERIFICATION_TIMEOUT_MS, maxBuffer: VERIFICATION_MAX_BUFFER }, (error, stdout, stderr) => {
-      resolve({ command, ok: !error, output: `${stdout}${stderr}`.trim() || (error ? error.message : '') });
+      const combined = `${stdout}${stderr}`.trim();
+      // `execFile` reports a missing binary as a bare `spawn <bin> ENOENT` — accurate but
+      // meaningless to someone who doesn't recognize that error shape. `verificationEnv()`
+      // already widens PATH for the common install locations it knows about; this is what's
+      // left once that hasn't found the tool either — it's just not installed at all.
+      const message = error && error.code === 'ENOENT' ? `${bin} not found on this machine — install it first, then try Verify again.` : error?.message;
+      resolve({ command, ok: !error, output: combined || message || '' });
     });
   });
 }

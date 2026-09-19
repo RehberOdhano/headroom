@@ -124,10 +124,12 @@ existing statusline script's stdin through it and append its output as an additi
 | Usage credits | Mirrors claude.ai's own "Usage credits" panel: this month's pay-as-you-go spend against your $ limit, plus your current prepaid balance and auto-reload state. Warns once as a promotional credit grant enters its final week before expiring. |
 | Burn-rate forecast | Linear projection over the current run since the last reset, with confidence labeled low/medium/high, plus a concrete suggestion (switch model / pace back) when at risk of hitting the limit before reset. |
 | History dashboard | Weeks of local snapshot history as charts, with 24h/7d/30d windows. |
+| Backup & restore | Export local usage history, Guardrails project fingerprints, and settings (excluding the daemon connection, which stays device-local) to a JSON file, and restore it later — additive only, never duplicates a snapshot already stored or overwrites a fresher Guardrails record. Protects against losing history when clearing browser data or moving to a new machine. |
 | Threshold alerts | Configurable browser notifications (default: 80% / 95%). |
 | On-page badge | A small, self-contained, toggleable usage indicator on claude.ai. |
 | CLI attribution *(daemon)* | Token and cost totals by project and model (with each model's share of tokens) and a rough tokens-per-percent-of-weekly-limit estimate, applied per-project too ("~N% of this week") and, week by week, as a small CLI-vs-chat split chart. CSV export alongside the existing per-session markdown export. |
 | Top usage *(daemon)* | Priciest sessions and days over the last 30 days, with the same resume/export actions as retention warnings — a session costing far more than a typical one for the account is flagged "unusually high", the same heuristic that also drives the session-anomaly notification below. |
+| Cost heatmap *(daemon)* | A day-of-week × hour-of-day grid of CLI spend, bucketed in your local time zone, with a "priciest bucket" callout — a rough proxy for when you tend to run costly sessions (a session's entire cost is attributed to its last-activity hour, not tracked sub-hour). |
 | Skills, commands & subagents *(daemon)* | Frequency of Skill invocations and slash commands, and token totals per subagent type — counted from local session transcripts, never conversation content. |
 | Session search *(daemon)* | Full-text search across local Claude Code sessions, with a one-click `cd <dir> && claude --resume <id>` copy button. |
 | Retention warnings *(daemon)* | Flags sessions nearing Claude Code's 30-day log cleanup, with one-click markdown export (embedded images included). |
@@ -176,7 +178,7 @@ packages/
 
 ```sh
 pnpm install
-pnpm -r run test         # 622 tests across the three packages as of this writing
+pnpm -r run test         # 643 tests across the three packages as of this writing
 pnpm -r run typecheck
 pnpm -r run build
 ```
