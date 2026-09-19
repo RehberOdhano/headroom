@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { canCreateNewProjectDir, runBootstrap } from '../src/adapters/bootstrap.js';
+import { canCreateNewProjectDir, runBootstrap, runVerificationCommand } from '../src/adapters/bootstrap.js';
 
 describe('canCreateNewProjectDir', () => {
   let parent: string;
@@ -456,5 +456,43 @@ describe('runBootstrap', () => {
       });
       expect(result.verification).toBeNull();
     });
+  });
+});
+
+describe('runVerificationCommand', () => {
+  let parent: string;
+
+  beforeEach(() => {
+    parent = mkdtempSync(path.join(tmpdir(), 'headroom-verify-'));
+  });
+
+  afterEach(() => {
+    rmSync(parent, { recursive: true, force: true });
+  });
+
+  it('turns a missing-binary ENOENT into a plain-English message instead of the raw spawn error', async () => {
+    const step = await runVerificationCommand('definitely-not-a-real-binary-xyz --version', parent);
+
+    expect(step.ok).toBe(false);
+    expect(step.output).toBe('definitely-not-a-real-binary-xyz not found on this machine — install it first, then try Verify again.');
+  });
+
+  it('reports a real failure (not the ENOENT message) for a command that exists and fails on its own terms', async () => {
+    // `runVerificationCommand` naively splits on spaces (no shell), so a quoted `-e` script
+    // would get mangled — a real script file sidesteps that instead of testing shell-quoting.
+    const scriptPath = path.join(parent, 'fail.js');
+    writeFileSync(scriptPath, 'process.exit(1);');
+
+    const step = await runVerificationCommand(`node ${scriptPath}`, parent);
+
+    expect(step.ok).toBe(false);
+    expect(step.output).not.toContain('not found on this machine');
+  });
+
+  it('reports success for a command that exits cleanly', async () => {
+    const step = await runVerificationCommand('node --version', parent);
+
+    expect(step.ok).toBe(true);
+    expect(step.output).toMatch(/^v\d+\.\d+\.\d+$/);
   });
 });
