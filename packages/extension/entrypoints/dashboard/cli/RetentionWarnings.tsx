@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { DaemonSessionsReport } from '@headroom/shared';
 import { exportDaemonSession, getDaemonSessions, type DaemonResult } from '../../../lib/daemon-client.js';
 import { downloadMarkdown } from '../../../lib/downloads.js';
-import { formatTokens } from '../../../lib/format.js';
+import { formatLastActivity, formatTokens } from '../../../lib/format.js';
 import { findRetentionWarnings, SESSION_RETENTION_DAYS } from '../../../lib/retention.js';
 import type { Settings } from '../../../lib/protocol.js';
 
@@ -32,8 +32,8 @@ export function RetentionWarnings({ settings }: { settings: Settings }) {
           <div className="warning-info">
             <p className="warning-title">{session.projectPath}</p>
             <p className="warning-meta">
-              {Math.max(0, Math.round(daysLeft))} day{Math.round(daysLeft) === 1 ? '' : 's'} left ·{' '}
-              {formatTokens(session.totalTokens)} tokens
+              {formatLastActivity(session.lastActivity)} · {Math.max(0, Math.round(daysLeft))} day
+              {Math.round(daysLeft) === 1 ? '' : 's'} left · {formatTokens(session.totalTokens)} tokens
             </p>
           </div>
           <button

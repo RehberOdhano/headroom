@@ -125,6 +125,18 @@ export function describeSource(source: LimitSnapshot['source']): string {
   return SOURCE_LABELS[source];
 }
 
+/** "Aug 30, 2:14 PM" — a session's last-activity timestamp. Used anywhere a list can hold more
+ *  than one session for the same project (e.g. retention warnings), where the project name alone
+ *  doesn't distinguish rows. */
+export function formatLastActivity(isoTimestamp: string): string {
+  return new Date(isoTimestamp).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 /** YYYYMMDD, the exact format ccusage's `--since`/`--until` flags take (confirmed via
  *  `ccusage claude daily --help`). */
 export function formatCcusageDate(date: Date): string {

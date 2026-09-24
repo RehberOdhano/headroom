@@ -5,6 +5,7 @@ import {
   describeForecast,
   describeSource,
   formatCcusageDate,
+  formatLastActivity,
   formatPercent,
   formatResetLabel,
 } from '../lib/format.js';
@@ -142,6 +143,21 @@ describe('describeSource', () => {
     expect(describeSource('usage')).toBe('periodic check');
     expect(describeSource('message_limit')).toBe('claude.ai chat');
     expect(describeSource('rate_limit_event')).toBe('Claude Code web');
+  });
+});
+
+describe('formatLastActivity', () => {
+  it('includes a time, distinguishing two sessions on the same day', () => {
+    const morning = formatLastActivity('2026-08-30T09:05:00Z');
+    const evening = formatLastActivity('2026-08-30T21:05:00Z');
+    expect(morning).toContain(':'); // a time is present, in whatever the runtime locale's format is
+    expect(morning).not.toBe(evening);
+  });
+
+  it('distinguishes two sessions on different days', () => {
+    const day1 = formatLastActivity('2026-08-01T12:00:00Z');
+    const day2 = formatLastActivity('2026-08-30T12:00:00Z');
+    expect(day1).not.toBe(day2);
   });
 });
 

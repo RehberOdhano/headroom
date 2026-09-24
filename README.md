@@ -178,7 +178,7 @@ packages/
 
 ```sh
 pnpm install
-pnpm -r run test         # 643 tests across the three packages as of this writing
+pnpm -r run test         # 646 tests across the three packages as of this writing
 pnpm -r run typecheck
 pnpm -r run build
 ```
