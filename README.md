@@ -34,6 +34,13 @@ pay-as-you-go usage.
 
 ### Extension
 
+**Chrome / Edge:** install from the
+[Chrome Web Store](https://chromewebstore.google.com/detail/chjbjdabpficejgogljohhlobfaehepl)
+(Edge can install Chrome Web Store extensions directly). Firefox isn't on a store yet — build it
+from source below.
+
+To build from source instead (or to develop):
+
 ```sh
 git clone <this repo>
 cd headroom
@@ -43,7 +50,7 @@ pnpm --filter @headroom/extension run build        # add ":firefox" suffix for F
 
 | Browser | Steps |
 | --- | --- |
-| Chrome / Edge | Open `chrome://extensions` (or `edge://extensions`), enable **Developer mode**, click **Load unpacked**, select `packages/extension/.output/chrome-mv3`. |
+| Chrome / Edge (from source) | Open `chrome://extensions` (or `edge://extensions`), enable **Developer mode**, click **Load unpacked**, select `packages/extension/.output/chrome-mv3`. |
 | Firefox | Run `pnpm --filter @headroom/extension run build:firefox`, then load `packages/extension/.output/firefox-mv2` via `about:debugging` → **This Firefox** → **Load Temporary Add-on**. For live reload during development, use `pnpm --filter @headroom/extension run dev:firefox` instead. |
 
 Once installed, visit any claude.ai page once so the extension can detect your account. After
@@ -164,6 +171,10 @@ existing statusline script's stdin through it and append its output as an additi
 - Per-model limit rows are not shown — no captured `/usage` response has ever included a
   `limits[]` entry beyond the overall session/weekly kinds, so there is nothing real to build
   against yet.
+- The published extension's host permissions hardcode the daemon's default port
+  (`http://127.0.0.1:4317/*`), because Chrome's manifest validator rejects a wildcard port. Running
+  the daemon on a custom `PORT` (with a matching custom daemon URL in the options page) isn't
+  supported.
 
 ## Development
 
@@ -178,7 +189,7 @@ packages/
 
 ```sh
 pnpm install
-pnpm -r run test         # 646 tests across the three packages as of this writing
+pnpm -r run test         # 648 tests across the three packages as of this writing
 pnpm -r run typecheck
 pnpm -r run build
 ```
