@@ -7,7 +7,8 @@ everything below.
 
 It reads your local Claude Code session logs (`~/.claude/projects/**/*.jsonl`) and config. It
 never talks to claude.ai, and claude.ai never talks to it. It's stateless and read-only except
-for one narrow write path (Guardrails permission overrides, scoped to one gitignored file) — see
+for two write paths you trigger yourself (Guardrails overrides, scoped to one gitignored file, and
+New Project scaffolding) — see
 the [main repo](https://github.com/RehberOdhano/headroom) for the full source and docs.
 
 ## Install
@@ -21,6 +22,9 @@ claude-usage-daemon install    # generates a token, registers a login-time servi
 
 No token to copy or paste: open the extension's options page and it pairs with the daemon
 automatically within about a minute (a **Check now** button forces this immediately).
+
+If you later reinstall the extension or clear its data, run `claude-usage-daemon install` again —
+the daemon hands out its token only once, so a fresh extension otherwise can't pair.
 
 `install` registers a background service so the daemon survives a reboot: a launchd agent on
 macOS, a systemd `--user` unit on Linux, or a Task Scheduler task on Windows. On Linux, also run
@@ -37,14 +41,11 @@ start` in the foreground works regardless of platform.
 
 Once paired, the extension's dashboard gets:
 
-- CLI token/cost attribution by project and model, plus a rough tokens-per-percent-of-weekly-limit
+- CLI token attribution by project and model, plus a rough tokens-per-percent-of-weekly-limit
   estimate
-- Priciest sessions/days over the last 30 days, and a cost-by-time-of-day heatmap
-- Skill, slash-command, subagent, and MCP-server usage frequency
 - Full-text session search with one-click resume
 - Retention warnings before Claude Code's 30-day log cleanup, with markdown export
 - Guardrails: view/override permission rules, hooks, skills, and CLAUDE.md for a project you pick
-- Per-project and account-wide CLI budget alerts, and a session-cost anomaly detector
 - New Project scaffolding with automatic stack detection
 
 See the [main repo's README](https://github.com/RehberOdhano/headroom#features) for the full

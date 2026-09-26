@@ -17,7 +17,7 @@ export const BACKUP_VERSION = 1;
  *   daemon install, not portable history; carrying an old token into a restore would silently
  *   clobber a token this machine already paired with. Restoring settings intentionally never
  *   touches whatever token is already configured (see `mergeRestoredSettings`).
- * - Everything else in `meta` (orgId, prepaidCredits, dedup flags like `alertState:*`) is either
+ * - Everything else in `meta` (orgId, dedup flags like `alertState:*`) is either
  *   re-derived automatically on the next poll or pure internal bookkeeping — not history a user
  *   would recognize as "their data".
  */

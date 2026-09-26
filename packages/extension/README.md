@@ -10,7 +10,8 @@ or see the [root README](../../README.md) for building from source and the full 
 ```sh
 pnpm --filter @headroom/extension run dev         # dev build, Chrome (":firefox" suffix for Firefox)
 pnpm --filter @headroom/extension run build       # production build -> .output/chrome-mv3
-pnpm --filter @headroom/extension run test
+pnpm --filter @headroom/extension run test       # unit tests (vitest)
+pnpm --filter @headroom/extension run test:e2e   # Playwright: built extension in Chromium vs a stubbed claude.ai
 ```
 
 Contributor notes (content-script world boundary, MV2/MV3 differences, background worker

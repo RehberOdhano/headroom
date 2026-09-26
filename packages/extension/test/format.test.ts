@@ -75,6 +75,11 @@ describe('describeForecast', () => {
     expect(describeForecast(flat, null)).toBeNull();
   });
 
+  it('returns null for a barely-used bar, however steep the fit', () => {
+    expect(describeForecast(highConfidence, '2026-08-29T20:00:00Z', 3)).toBeNull();
+    expect(describeForecast(highConfidence, '2026-08-29T20:00:00Z', 10)?.atRisk).toBe(true);
+  });
+
   it('flags at-risk when the projection lands before the reset', () => {
     const result = describeForecast(highConfidence, '2026-08-29T20:00:00Z');
     expect(result?.atRisk).toBe(true);

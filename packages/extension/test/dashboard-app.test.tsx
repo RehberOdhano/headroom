@@ -24,6 +24,8 @@ describe('dashboard App', () => {
     // that promise never resolves. Default settings have an empty daemonToken, so Cli renders
     // its "connect the daemon" hint without making any network calls.
     backgroundDefinition.main();
+    // fake-browser doesn't implement runtime.getManifest (used by the what's-new banner).
+    fakeBrowser.runtime.getManifest = vi.fn(() => ({ version: '0.1.4' })) as never;
   });
 
   afterEach(() => {
@@ -95,7 +97,13 @@ describe('dashboard App', () => {
   });
 
   it('switches tabs by toggling each panel\'s hidden attribute, not unmounting them', async () => {
+    await extensionMessenger.sendMessage('updateSettings', {
+      daemonUrl: 'http://127.0.0.1:4317',
+      daemonToken: 'test-token',
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({}));
     render(<App />);
+    await screen.findByRole('tab', { name: 'Search' });
     await screen.findByText(/No snapshots captured in this window yet/);
 
     const panelsByLabel = () => {
@@ -117,8 +125,53 @@ describe('dashboard App', () => {
     expect(panels.cli.hasAttribute('hidden')).toBe(true);
   });
 
+  describe('progressive disclosure', () => {
+    it('shows only the tabs that work without the daemon until it is connected', async () => {
+      render(<App />);
+      await screen.findByText(/No snapshots captured in this window yet/);
+      expect(screen.getByRole('tab', { name: 'Usage & Forecast' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: 'CLI Attribution' })).toBeTruthy();
+      expect(screen.queryByRole('tab', { name: 'Search' })).toBeNull();
+      expect(screen.queryByRole('tab', { name: 'Guardrails' })).toBeNull();
+      expect(screen.queryByRole('tab', { name: 'New Project' })).toBeNull();
+      // The CLI tab doubles as the install prompt, with a copy-paste command.
+      expect(await screen.findByText(/npm install -g @rehberodhano\/claude-usage-companion-daemon/)).toBeTruthy();
+    });
+
+    it('moves between tabs with the arrow keys (roving tabindex)', async () => {
+      render(<App />);
+      await screen.findByText(/No snapshots captured in this window yet/);
+      const first = screen.getByRole('tab', { name: 'Usage & Forecast' });
+      const second = screen.getByRole('tab', { name: 'CLI Attribution' });
+      expect(first.getAttribute('tabindex')).toBe('0');
+      expect(second.getAttribute('tabindex')).toBe('-1');
+      fireEvent.keyDown(first, { key: 'ArrowRight' });
+      expect(second.getAttribute('aria-selected')).toBe('true');
+      expect(second.getAttribute('tabindex')).toBe('0');
+    });
+  });
+
+  describe("what's new banner", () => {
+    it('stays silent on a fresh install and records the version', async () => {
+      render(<App />);
+      await screen.findByText(/No snapshots captured in this window yet/);
+      expect(screen.queryByText(/What's new/)).toBeNull();
+      await vi.waitFor(async () => expect((await db.meta.get('lastSeenVersion'))?.value).toBe('0.1.4'));
+    });
+
+    it('shows once after an update to a version with notes, and dismissing records it', async () => {
+      fakeBrowser.runtime.getManifest = vi.fn(() => ({ version: '0.2.0' })) as never;
+      await db.meta.put({ key: 'lastSeenVersion', value: '0.1.4' });
+      render(<App />);
+      expect(await screen.findByText(/What's new in 0.2.0/)).toBeTruthy();
+      fireEvent.click(screen.getByText('Dismiss'));
+      await vi.waitFor(async () => expect((await db.meta.get('lastSeenVersion'))?.value).toBe('0.2.0'));
+      await vi.waitFor(() => expect(screen.queryByText(/What's new/)).toBeNull());
+    });
+  });
+
   describe('usage credits', () => {
-    it('is hidden entirely when neither extraCredits nor a prepaid credits snapshot exists', async () => {
+    it('is hidden entirely when there is no extraCredits data', async () => {
       await db.limitSnapshots.add({ capturedAt: new Date().toISOString(), source: 'usage', session: bar(10), weekly: bar(20) });
       render(<App />);
       await screen.findByText('Session (5h)');
@@ -154,56 +207,6 @@ describe('dashboard App', () => {
 
       expect(await screen.findByText(/Enabled on your plan, but no usage reported yet/)).toBeTruthy();
     });
-
-    it('shows the prepaid balance and auto-reload state under its own subheading', async () => {
-      await db.meta.put({
-        key: 'prepaidCredits',
-        value: JSON.stringify({ capturedAt: new Date().toISOString(), balanceAmount: 38.11, currency: 'USD', autoReloadEnabled: false, promoTranches: [] }),
-      });
-
-      render(<App />);
-
-      expect(await screen.findByText('Usage credits')).toBeTruthy();
-      expect(await screen.findByText('Balance')).toBeTruthy();
-      expect(await screen.findByText(/USD 38.11 available · auto-reload off/)).toBeTruthy();
-    });
-
-    it('notes the soonest-expiring promo tranche when one exists', async () => {
-      await db.meta.put({
-        key: 'prepaidCredits',
-        value: JSON.stringify({
-          capturedAt: new Date().toISOString(),
-          balanceAmount: 38.11,
-          currency: 'USD',
-          autoReloadEnabled: false,
-          promoTranches: [{ remainingAmount: 38.09, grantedAmount: 100, currency: 'USD', expiresAt: '2026-09-19T00:00:00Z' }],
-        }),
-      });
-
-      render(<App />);
-
-      expect(await screen.findByText(/USD 38.09 of promotional credit expires/)).toBeTruthy();
-    });
-
-    it('shows both subsections together in one card when both data sources are present', async () => {
-      await db.limitSnapshots.add({
-        capturedAt: new Date().toISOString(),
-        source: 'usage',
-        session: bar(10),
-        weekly: bar(20),
-        extraCredits: { percent: 14.63, usedAmount: 14.63, limitAmount: 100, currency: 'USD' },
-      });
-      await db.meta.put({
-        key: 'prepaidCredits',
-        value: JSON.stringify({ capturedAt: new Date().toISOString(), balanceAmount: 38.11, currency: 'USD', autoReloadEnabled: false, promoTranches: [] }),
-      });
-
-      render(<App />);
-
-      expect(await screen.findAllByText('Usage credits')).toHaveLength(1);
-      expect(await screen.findByText('Spent this month')).toBeTruthy();
-      expect(await screen.findByText('Balance')).toBeTruthy();
-    });
   });
 
   describe('New Project → Guardrails handoff', () => {
@@ -233,7 +236,7 @@ describe('dashboard App', () => {
 
       render(<App />);
 
-      fireEvent.click(screen.getByRole('tab', { name: 'New Project' }));
+      fireEvent.click(await screen.findByRole('tab', { name: 'New Project' }));
       // Scoped to the New Project tabpanel — its target-dir field and Guardrails' own manual-path
       // field share the same placeholder text, and every tab stays mounted simultaneously.
       const panels = screen.getAllByRole('tabpanel', { hidden: true });

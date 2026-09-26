@@ -39,28 +39,10 @@ export interface Settings {
   /** Percent thresholds worth a notification, any order/length. An empty array turns threshold
    *  alerts off entirely. */
   alertThresholds: number[];
-  /** Notify once this calendar month's CLI $ spend (from the daemon's own `/aggregate?by=day`,
-   *  same figure CLI Attribution shows) crosses this amount. `null` disables it — independent of
-   *  `alertThresholds`, which only ever tracks claude.ai's own plan-limit percentages, not $ CLI
-   *  cost. Requires the daemon to be configured; a no-daemon user just never gets this alert. */
-  cliMonthlyBudget: number | null;
-  /** Opt-in weekly notification summarizing local usage (peak session/weekly bar, and CLI
-   *  tokens/cost if the daemon is configured) — default off so an update doesn't start sending a
+  /** Opt-in notification when the burn-rate forecast says a bar will hit its limit before it
+   *  resets (see lib/pace-alert.ts) — default off so an update doesn't start sending a
    *  new kind of notification to existing users without them asking for it. */
-  weeklyDigestEnabled: boolean;
-  /** Per-project variant of `cliMonthlyBudget` — set from the Guardrails tab's project picker
-   *  (a real absolute path), not free-typed, since a project's CLI cost is keyed by ccusage's own
-   *  slug form (`/` -> `-`) rather than the real path; the background check derives the slug
-   *  itself. Additive to the global budget, not a replacement. */
-  perProjectCliBudgets: { projectDir: string; monthlyBudget: number }[];
-  /** Suppresses every notification this extension can fire (threshold, CLI budget, digest,
-   *  session-anomaly) during a daily window — a check some tools skip until someone's asleep and
-   *  annoyed. A suppressed alert isn't dropped: its dedup state is left unwritten so it fires on
-   *  the next check after the window ends. `start`/`end` are hours 0-23; `start > end` means the
-   *  window wraps past midnight. */
-  quietHoursEnabled: boolean;
-  quietHoursStart: number;
-  quietHoursEnd: number;
+  paceAlertEnabled: boolean;
 }
 
 export interface CapturedPayload {

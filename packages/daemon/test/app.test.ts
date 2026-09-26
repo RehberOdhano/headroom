@@ -130,36 +130,6 @@ describe('daemon app', () => {
     });
   });
 
-  describe('GET /usage/patterns', () => {
-    it('returns skill, command, subagent, and MCP-server usage counted from session logs', async () => {
-      await withFixtureClaudeDir(
-        async (claudeConfigDir) => {
-          const res = await createApp({ ccusage: { claudeConfigDir } }).request('/usage/patterns');
-          expect(res.status).toBe(200);
-          const body = await res.json();
-          expect(body.skills).toEqual([{ name: 'code-review', count: 1 }]);
-          expect(body.commands).toEqual([{ name: '/compact', count: 1 }]);
-          expect(body.agents).toEqual([{ subagentType: 'Explore', count: 2, inputTokens: 60, outputTokens: 25 }]);
-          expect(body.mcpServers.sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name))).toEqual([
-            { name: 'claude-in-chrome', count: 1 },
-            { name: 'filesystem', count: 1 },
-          ]);
-        },
-        'session-log-dir',
-      );
-    });
-
-    it('returns empty arrays when there is no session data', async () => {
-      // Explicit nonexistent dir, not a bare createApp() — that would fall through to this
-      // real machine's own ~/.claude, which has real session logs and would make this test
-      // depend on developer-machine state.
-      const res = await createApp({ ccusage: { claudeConfigDir: '/does/not/exist' } }).request('/usage/patterns');
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body).toEqual({ skills: [], commands: [], agents: [], mcpServers: [] });
-    });
-  });
-
   describe('/sessions/:id/export', () => {
     it('renders a session transcript as markdown', async () => {
       await withFixtureClaudeDir(

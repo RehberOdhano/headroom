@@ -18,7 +18,6 @@ import { HooksSection } from './guardrails/HooksSection.tsx';
 import { ProjectHealthSection } from './guardrails/ProjectHealthSection.tsx';
 import { PermissionsSection } from './guardrails/PermissionsSection.tsx';
 import { ProjectPicker } from './guardrails/ProjectPicker.tsx';
-import { ProjectUsageSection } from './guardrails/ProjectUsageSection.tsx';
 import { SkillsSection } from './guardrails/SkillsSection.tsx';
 
 /** Daemon-backed config visibility (permission rules, hooks, skills, CLAUDE.md docs) plus
@@ -279,7 +278,6 @@ function ConfigContent({
         </div>
       )}
 
-      {projectDir && <ProjectUsageSection settings={settings} projectDir={projectDir} />}
 
       {projectDir && <ClaudeMdSection settings={settings} projectDir={projectDir} />}
     </>

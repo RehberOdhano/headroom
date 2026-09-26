@@ -8,12 +8,7 @@ export const DEFAULT_SETTINGS: Settings = {
   daemonToken: '',
   snapshotRetentionDays: 90,
   alertThresholds: [...DEFAULT_ALERT_THRESHOLDS],
-  cliMonthlyBudget: null,
-  weeklyDigestEnabled: false,
-  perProjectCliBudgets: [],
-  quietHoursEnabled: false,
-  quietHoursStart: 22,
-  quietHoursEnd: 8,
+  paceAlertEnabled: false,
 };
 
 const SETTINGS_KEY = 'settings';

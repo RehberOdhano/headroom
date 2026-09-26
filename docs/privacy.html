@@ -236,7 +236,7 @@
   <header class="masthead">
     <p class="eyebrow">Privacy Policy</p>
     <h1 class="heading">Claude Usage Companion</h1>
-    <p class="meta"><strong>Effective:</strong> September 18, 2026 &nbsp;·&nbsp; <strong>Applies to:</strong> the browser extension and its optional local daemon &nbsp;·&nbsp; <strong>Version:</strong> 0.1.4</p>
+    <p class="meta"><strong>Effective:</strong> September 27, 2026 &nbsp;·&nbsp; <strong>Applies to:</strong> the browser extension and its optional local daemon &nbsp;·&nbsp; <strong>Version:</strong> 0.2.0</p>
     <div class="summary">
       <p><strong>In short:</strong> nothing you do in this extension leaves your computer. There
       is no account, no server, no analytics, and no copy of your conversations anywhere but
@@ -280,7 +280,7 @@
     <section id="extension-data">
       <h2><span class="num">02</span> What the extension reads</h2>
       <p>The extension only activates on <code class="mono">claude.ai</code> pages. While you're
-      there, it reads two things directly out of the page's own network traffic — it never
+      there, it reads a few things directly out of the page's own network traffic — it never
       touches Claude Code's local files itself:</p>
       <div class="fact-grid">
         <div class="fact">
@@ -290,6 +290,14 @@
         <div class="fact">
           <div class="label">Live limit updates</div>
           <div class="value">The same numbers, refreshed in real time while you're actively chatting, so the bars stay current without polling.</div>
+        </div>
+        <div class="fact">
+          <div class="label">Claude Code on the web limit events</div>
+          <div class="value">On claude.ai/code, only the rate-limit entries from a session's event stream. Every other entry in that stream can carry conversation content, so it is filtered out inside the page itself, before anything reaches the extension.</div>
+        </div>
+        <div class="fact">
+          <div class="label">Usage credits</div>
+          <div class="value">The figures claude.ai's own "Usage credits" panel shows: this month's pay-as-you-go spend against your limit.</div>
         </div>
       </div>
       <p>It does not read message content, does not read your conversation history, and does not
@@ -301,8 +309,8 @@
       <p>
         If you separately install the daemon (a manual, opt-in step — it never installs itself),
         it reads Claude Code's session logs directly from your own disk
-        (<code class="mono">~/.claude/projects/**/*.jsonl</code>) to show CLI token usage,
-        cost totals, and let you search your own past sessions.
+        (<code class="mono">~/.claude/projects/**/*.jsonl</code>) to show CLI token usage
+        and let you search your own past sessions.
       </p>
       <p>
         The daemon also powers the extension's "Guardrails" view: for a project you pick, it
@@ -360,7 +368,7 @@
       <div class="fact-grid">
         <div class="fact">
           <div class="label">Default retention</div>
-          <div class="value">90 days of usage history, configurable in the extension's settings (including down to nothing).</div>
+          <div class="value">90 days of usage history, configurable in the extension's settings (minimum 1 day).</div>
         </div>
         <div class="fact">
           <div class="label">To delete everything</div>
@@ -368,8 +376,12 @@
         </div>
       </div>
       <p>Guardrails data (permission rules, hooks, skills, and CLAUDE.md content) is read live
-      from the daemon each time you open that view, and isn't cached or stored by the extension
-      itself.</p>
+      from the daemon each time you open that view. The extension keeps only a small local
+      record per project you've viewed — a fingerprint and a list of rule and hook names — so it
+      can tell you what changed since you last looked; CLAUDE.md content is never stored.</p>
+      <p>For debugging, the extension also keeps your 50 most recent raw usage responses from
+      claude.ai (numbers and timestamps only, no conversation content), which you can export
+      from a collapsed section of the options page. They are never sent anywhere.</p>
       <p>
         You can back up this locally-stored history to a file at any time (Settings → Download
         backup), and restore it later (Settings → Restore from file). Both are ordinary browser
@@ -393,7 +405,7 @@
             <tr><td class="mono">host: claude.ai</td><td>Read usage data from claude.ai's own responses while you're on the site — the entire basis of the extension.</td></tr>
             <tr><td class="mono">host: 127.0.0.1</td><td>Talk to the optional local daemon on your own machine, if you've installed it — for usage/CLI data, and for the Guardrails view's local Claude Code config read/write described above. Nothing outside your device.</td></tr>
             <tr><td class="mono">alarms</td><td>Schedule the periodic usage check (every few minutes) and the pairing check for the local daemon.</td></tr>
-            <tr><td class="mono">notifications</td><td>Show a system notification when a usage bar crosses a threshold you've configured — defaults to 80%/95%, adjustable in Settings, or can be turned off entirely by clearing the thresholds there.</td></tr>
+            <tr><td class="mono">notifications</td><td>Show a local system notification when a usage bar crosses a threshold you've configured — defaults to 80%/95%, adjustable in Settings, or can be turned off entirely by clearing the thresholds there. One other optional notification, generated on your device from data already stored locally: a warning, off by default, that you are on pace to run out before a limit resets.</td></tr>
           </tbody>
         </table>
       </div>

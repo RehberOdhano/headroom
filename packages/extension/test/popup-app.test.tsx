@@ -65,7 +65,7 @@ describe('popup App', () => {
 
   it(
     'renders without throwing for a barely-positive rate outside a representable Date range ' +
-      '(same regression as the dashboard — Bar shares describeForecast/forecastBurnRate)',
+      '(same regression as the dashboard — the popup headline shares forecastBurnRate)',
     async () => {
       const now = new Date();
       const sixDaysAgo = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
@@ -80,4 +80,27 @@ describe('popup App', () => {
       expect(await screen.findByText('Weekly')).toBeTruthy();
     },
   );
+
+  it('shows no headline when nothing needs attention, and labels each bar as a progressbar', async () => {
+    await db.limitSnapshots.add({
+      capturedAt: new Date().toISOString(),
+      source: 'usage',
+      session: { percent: 12, resetsAt: new Date(Date.now() + 3 * 3_600_000).toISOString(), severity: 'normal', isActive: true },
+      weekly: null,
+    });
+    render(<App />);
+    expect((await screen.findByRole('progressbar', { name: 'Session (5h)' })).getAttribute('aria-valuenow')).toBe('12');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('flags a bar that is already at its limit', async () => {
+    await db.limitSnapshots.add({
+      capturedAt: new Date().toISOString(),
+      source: 'usage',
+      session: bar(100),
+      weekly: null,
+    });
+    render(<App />);
+    expect(await screen.findByText(/Session limit reached/)).toBeTruthy();
+  });
 });
