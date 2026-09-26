@@ -45,24 +45,28 @@ export default function App() {
 
   return (
     <main style={{ fontFamily: 'system-ui, sans-serif', padding: '1.5rem', maxWidth: 480 }}>
-      <h1 style={{ fontSize: '1.1rem' }}>Claude Usage Companion — captures</h1>
-      <p>
-        {records.length} raw capture{records.length === 1 ? '' : 's'} stored locally
-        {Object.keys(counts).length > 0
-          ? ` (${Object.entries(counts)
-              .map(([endpoint, count]) => `${endpoint}: ${count}`)
-              .join(', ')})`
-          : ''}
-        . Updates live as you use claude.ai — no need to reopen this page.
-      </p>
-      {lastCapturedAt && (
-        <p style={{ color: '#666', fontSize: '0.9rem' }}>Last capture: {lastCapturedAt}</p>
-      )}
-      <button type="button" onClick={exportFixtures} disabled={records.length === 0}>
-        Export fixtures
-      </button>
+      <h1 style={{ fontSize: '1.1rem' }}>Claude Usage Companion</h1>
 
       <SettingsPanel />
+
+      <details style={{ marginTop: 24 }}>
+        <summary style={{ cursor: 'pointer', color: '#666' }}>Developer: raw captures</summary>
+        <p>
+          {records.length} raw capture{records.length === 1 ? '' : 's'} stored locally
+          {Object.keys(counts).length > 0
+            ? ` (${Object.entries(counts)
+                .map(([endpoint, count]) => `${endpoint}: ${count}`)
+                .join(', ')})`
+            : ''}
+          . Updates live as you use claude.ai — no need to reopen this page.
+        </p>
+        {lastCapturedAt && (
+          <p style={{ color: '#666', fontSize: '0.9rem' }}>Last capture: {lastCapturedAt}</p>
+        )}
+        <button type="button" onClick={exportFixtures} disabled={records.length === 0}>
+          Export fixtures
+        </button>
+      </details>
     </main>
   );
 }

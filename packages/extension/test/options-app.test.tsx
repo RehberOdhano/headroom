@@ -93,7 +93,7 @@ describe('options App', () => {
     render(<App />);
 
     expect(await screen.findByText(/Setup status \(0\/3\)/)).toBeTruthy();
-    expect(screen.getByText(/Visited claude.ai once/)).toBeTruthy();
+    expect(screen.getByText(/Opened Settings → Usage on claude.ai once/)).toBeTruthy();
     expect(screen.getByText(/First usage snapshot captured/)).toBeTruthy();
     expect(screen.getByText(/Local daemon paired/)).toBeTruthy();
     // Not paired yet, so "Daemon reachable right now" shouldn't even be listed.
@@ -129,8 +129,8 @@ describe('options App', () => {
     expect((await screen.findByLabelText(/Warn at/)).getAttribute('value')).toBe(String(DEFAULT_SETTINGS.alertThresholds[0]));
     expect((await screen.findByLabelText(/Alert at/)).getAttribute('value')).toBe(String(DEFAULT_SETTINGS.alertThresholds[1]));
 
-    const daemonUrlInput = (await screen.findByLabelText(/Daemon URL/)) as HTMLInputElement;
-    expect(daemonUrlInput.value).toBe(DEFAULT_SETTINGS.daemonUrl);
+    // The daemon URL isn't editable: the manifest only grants host access to the default port.
+    expect(screen.queryByLabelText(/Daemon URL/)).toBeNull();
   });
 
   it('toggling the badge checkbox persists the change', async () => {
@@ -155,53 +155,15 @@ describe('options App', () => {
     });
   });
 
-  it('toggling the weekly digest checkbox persists the change', async () => {
+  it('toggling the pace warning checkbox persists the change', async () => {
     render(<App />);
-    const checkbox = (await screen.findByLabelText(/Send me a weekly usage digest/)) as HTMLInputElement;
+    const checkbox = (await screen.findByLabelText(/on pace to run out/)) as HTMLInputElement;
     expect(checkbox.checked).toBe(false);
 
     fireEvent.click(checkbox);
 
     await vi.waitFor(async () => {
-      expect((await extensionMessenger.sendMessage('getSettings')).weeklyDigestEnabled).toBe(true);
-    });
-  });
-
-  it('setting a CLI monthly budget persists it, and clearing the field disables it again', async () => {
-    render(<App />);
-    const input = await screen.findByLabelText(/Alert me if CLI spend this month exceeds/);
-
-    fireEvent.change(input, { target: { value: '25' } });
-    await vi.waitFor(async () => {
-      expect((await extensionMessenger.sendMessage('getSettings')).cliMonthlyBudget).toBe(25);
-    });
-
-    fireEvent.change(input, { target: { value: '' } });
-    await vi.waitFor(async () => {
-      expect((await extensionMessenger.sendMessage('getSettings')).cliMonthlyBudget).toBeNull();
-    });
-  });
-
-  it('enabling quiet hours reveals the from/until fields, hidden by default, and persists changes to them', async () => {
-    render(<App />);
-    const checkbox = (await screen.findByLabelText(/Don't notify me during quiet hours/)) as HTMLInputElement;
-    expect(checkbox.checked).toBe(false);
-    expect(screen.queryByLabelText('From')).toBeNull();
-
-    fireEvent.click(checkbox);
-    await vi.waitFor(async () => {
-      expect((await extensionMessenger.sendMessage('getSettings')).quietHoursEnabled).toBe(true);
-    });
-
-    const fromSelect = (await screen.findByLabelText('From')) as HTMLSelectElement;
-    const untilSelect = (await screen.findByLabelText('Until')) as HTMLSelectElement;
-    fireEvent.change(fromSelect, { target: { value: '23' } });
-    fireEvent.change(untilSelect, { target: { value: '7' } });
-
-    await vi.waitFor(async () => {
-      const settings = await extensionMessenger.sendMessage('getSettings');
-      expect(settings.quietHoursStart).toBe(23);
-      expect(settings.quietHoursEnd).toBe(7);
+      expect((await extensionMessenger.sendMessage('getSettings')).paceAlertEnabled).toBe(true);
     });
   });
 
@@ -221,18 +183,14 @@ describe('options App', () => {
     });
   });
 
-  it('changing the daemon URL/token persists them', async () => {
+  it('changing the manual token persists it', async () => {
     render(<App />);
-    const urlInput = await screen.findByLabelText(/Daemon URL/);
     const tokenInput = await screen.findByLabelText(/Token/);
 
-    fireEvent.change(urlInput, { target: { value: 'http://127.0.0.1:9999' } });
     fireEvent.change(tokenInput, { target: { value: 'my-token' } });
 
     await vi.waitFor(async () => {
-      const settings = await extensionMessenger.sendMessage('getSettings');
-      expect(settings.daemonUrl).toBe('http://127.0.0.1:9999');
-      expect(settings.daemonToken).toBe('my-token');
+      expect((await extensionMessenger.sendMessage('getSettings')).daemonToken).toBe('my-token');
     });
   });
 

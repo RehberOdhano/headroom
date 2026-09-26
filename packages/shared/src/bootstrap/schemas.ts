@@ -12,7 +12,7 @@ export const bootstrapStackSchema = z.enum(['node-typescript', 'python', 'go', '
 export const bootstrapDocumentEncodingSchema = z.enum(['utf8', 'base64']);
 
 // `.default()` on every field for the same reason as every other daemon response schema (see
-// gitActivityResponseSchema): a daemon that hasn't restarted since this route shipped must still
+// `daemonSearchResponseSchema`'s siblings): a daemon that hasn't restarted since this route shipped must still
 // produce a parseable response, not fail the whole request over an unrecognized shape.
 export const bootstrapVerificationStepSchema = z.object({
   command: z.string().default(''),

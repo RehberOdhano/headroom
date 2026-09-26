@@ -7,7 +7,6 @@ import {
   getDaemonConfig,
   getDaemonConfigProjects,
   getDaemonDaily,
-  getDaemonGitActivity,
   getDaemonSessions,
   removeDaemonPermissionRule,
   runDaemonBootstrap,
@@ -85,20 +84,6 @@ describe('getDaemonDaily / getDaemonByProject / getDaemonByModel', () => {
     expect((await getDaemonByProject(settings)).ok).toBe(true);
     expect((await getDaemonByModel(settings)).ok).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
-});
-
-describe('getDaemonGitActivity', () => {
-  it('URL-encodes projectDir and since, and returns parsed data', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ isGitRepo: true, commitCount: 5 }));
-
-    const result = await getDaemonGitActivity(settings, '/Users/x/my project', '2026-08-01');
-
-    expect(result).toEqual({ ok: true, data: { isGitRepo: true, commitCount: 5 } });
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://127.0.0.1:4317/config/git-activity?projectDir=%2FUsers%2Fx%2Fmy%20project&since=2026-08-01',
-      expect.anything(),
-    );
   });
 });
 

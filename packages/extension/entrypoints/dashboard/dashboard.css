@@ -7,8 +7,8 @@
   --color-border: #e5e7eb;
   --color-border-strong: #d1d5db;
   --color-text: #111827;
-  --color-text-muted: #6b7280;
-  --color-text-faint: #9ca3af;
+  --color-text-muted: #5b6472;
+  --color-text-faint: #6b7280;
   --color-accent: #3b82f6;
   --color-accent-strong: #2563eb;
   --color-accent-bg: #eff6ff;
@@ -47,7 +47,7 @@
     --color-border-strong: #333d4a;
     --color-text: #e7e9ec;
     --color-text-muted: #97a1af;
-    --color-text-faint: #6b7684;
+    --color-text-faint: #8791a0;
     --color-accent: #5b9dff;
     --color-accent-strong: #7db2ff;
     --color-accent-bg: rgba(91, 157, 255, 0.14);
@@ -420,57 +420,6 @@ body {
   opacity: 0.5;
 }
 
-/* Cost-by-time-of-day heatmap (CLI Attribution > By time of day) */
-.heatmap-wrap {
-  overflow-x: auto;
-}
-
-.heatmap-table {
-  border-collapse: separate;
-  border-spacing: 2px;
-}
-
-.heatmap-hour-label {
-  font-size: 0.65rem;
-  font-weight: 400;
-  color: var(--color-text-faint);
-  text-align: center;
-  padding: 0 2px 4px;
-}
-
-.heatmap-day-label {
-  font-size: 0.72rem;
-  font-weight: 500;
-  color: var(--color-text-muted);
-  text-align: right;
-  padding-right: var(--space-2);
-  white-space: nowrap;
-}
-
-.heatmap-cell {
-  width: 15px;
-  height: 15px;
-  border-radius: 3px;
-  background: var(--color-bg-subtle);
-  border: 1px solid var(--color-border);
-}
-
-.heatmap-legend {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: var(--space-3);
-  font-size: 0.74rem;
-  color: var(--color-text-muted);
-}
-
-.heatmap-legend-swatch {
-  width: 11px;
-  height: 11px;
-  border-radius: 2px;
-  border: 1px solid var(--color-border);
-}
-
 /* Forecast line */
 .forecast-line {
   display: flex;
@@ -524,14 +473,85 @@ body {
 }
 
 .btn-primary {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
+  background: var(--color-accent-strong);
+  border-color: var(--color-accent-strong);
   color: #ffffff;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--color-accent-strong);
-  border-color: var(--color-accent-strong);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+/* Keyboard focus: visible on every interactive control that doesn't already define its own. */
+.tab-button:focus-visible,
+.btn:focus-visible,
+.segmented button:focus-visible {
+  outline: 2px solid var(--color-accent-strong);
+  outline-offset: 2px;
+}
+
+/* Progressive disclosure: a quiet divider label before the advanced (write-capable) tabs. */
+.tabs-divider {
+  align-self: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--color-border);
+}
+
+.notice {
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  align-items: flex-start;
+  background: var(--color-accent-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4);
+  margin-bottom: var(--space-5);
+  font-size: 0.88rem;
+}
+
+.notice ul {
+  margin: var(--space-2) 0 0;
+  padding-left: 1.2em;
+}
+
+.install-command {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin: var(--space-3) 0;
+}
+
+.install-command code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 0.8rem;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Stat cards (CLI attribution) */
@@ -644,8 +664,8 @@ body {
   box-shadow: 0 0 0 3px var(--color-accent-bg);
 }
 
-/* Stacked form fields (New project tab) — same visual weight as Guardrails' spend-limit input
-   (bold title, spacious full-width field) rather than the compact .search-input used for inline
+/* Stacked form fields (New project tab) — spacious full-width fields with a bold title
+   rather than the compact .search-input used for inline
    filters/search bars. */
 .form-field {
   margin-bottom: var(--space-4);
@@ -834,13 +854,6 @@ body {
   margin-top: 2px !important;
 }
 
-.anomaly-marker {
-  font-family: var(--font-sans, inherit);
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--color-warning);
-}
-
 /* Guardrails (permissions/hooks/skills/CLAUDE.md) */
 /* Small rounded rect, not a full pill — a pill shape with `white-space: nowrap` is exactly what
    let a long pattern (e.g. `Bash(docker compose -f docker-compose.override.yml up *)`) overflow
@@ -963,58 +976,6 @@ body {
 .project-picker-row > .select-wrap {
   flex: 1 1 320px;
   min-width: 200px;
-}
-
-/* "Set monthly spend limit" block (Guardrails > Project usage) — mirrors claude.ai's own Usage
-   settings spend-limit page: bold title, one-line description, a big full-width input, small
-   caption below. Deliberately more spacious than this dashboard's usual compact rows since it's
-   directly modeled on that reference. */
-.spend-limit-block {
-  margin-top: var(--space-2);
-}
-
-.spend-limit-title {
-  display: block;
-  font-size: 0.95rem;
-  font-weight: 650;
-  margin-bottom: var(--space-2);
-}
-
-.spend-limit-input-wrap {
-  position: relative;
-  margin: var(--space-3) 0;
-}
-
-.spend-limit-prefix {
-  position: absolute;
-  top: 50%;
-  left: 14px;
-  transform: translateY(-50%);
-  color: var(--color-text-muted);
-  font-size: 0.95rem;
-  pointer-events: none;
-}
-
-.spend-limit-input {
-  width: 100%;
-  height: 44px;
-  font: inherit;
-  font-size: 0.95rem;
-  padding: 0 14px 0 28px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  color: var(--color-text);
-}
-
-.spend-limit-input:focus {
-  outline: none;
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px var(--color-accent-bg);
-}
-
-.spend-limit-caption {
-  margin: 0;
 }
 
 .project-picker-advanced {

@@ -1,10 +1,11 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useState } from 'react';
-import { forecastBurnRate, type ExtraCreditsInfo, type LimitBar } from '@headroom/shared';
+import type { ExtraCreditsInfo, LimitBar } from '@headroom/shared';
 import { db } from '../../lib/db.js';
 import { extensionMessenger } from '../../lib/messaging.js';
-import { barColor, describeForecast, describeSource, formatPercent, formatResetLabel } from '../../lib/format.js';
+import { barColor, describeSource, formatPercent, formatResetLabel } from '../../lib/format.js';
 import { barHistory } from '../../lib/history.js';
+import { summarizeHeadroom, type Headline } from '../../lib/headline.js';
 
 const styles = {
   main: { fontFamily: 'system-ui, sans-serif', padding: '1rem', width: 260 },
@@ -27,14 +28,12 @@ const styles = {
     marginBottom: 12,
     overflow: 'hidden',
   } as const,
-  empty: { fontSize: '0.85rem', color: '#666', lineHeight: 1.4 },
-  updated: { fontSize: '0.75rem', color: '#999', marginTop: 4 },
-  forecast: { fontSize: '0.75rem', marginTop: -8, marginBottom: 12 },
-  forecastAtRisk: { color: '#b45309' },
-  forecastOnTrack: { color: '#999' },
+  empty: { fontSize: '0.85rem', color: '#4b5563', lineHeight: 1.4 },
+  updated: { fontSize: '0.75rem', color: '#6b7280', marginTop: 4 },
   historyLink: { fontSize: '0.75rem', marginTop: 4, display: 'inline-block' },
+  headline: { fontSize: '0.85rem', fontWeight: 600, lineHeight: 1.35, margin: '0 0 0.75rem', padding: '0.5rem 0.6rem', borderRadius: 6 } as const,
   extraCredits: { marginTop: 4, marginBottom: 12 },
-  extraCreditsAmount: { fontSize: '0.75rem', color: '#999', margin: '2px 0 0' },
+  extraCreditsAmount: { fontSize: '0.75rem', color: '#6b7280', margin: '2px 0 0' },
 } as const;
 
 function ExtraCreditsRow({ info }: { info: ExtraCreditsInfo }) {
@@ -53,8 +52,24 @@ function ExtraCreditsRow({ info }: { info: ExtraCreditsInfo }) {
   );
 }
 
-function Bar({ title, bar, history }: { title: string; bar: LimitBar; history: ReturnType<typeof barHistory> }) {
-  const forecast = describeForecast(forecastBurnRate(history), bar.resetsAt);
+// Never color-only: each tone also carries a leading symbol so it reads without color vision.
+const HEADLINE_STYLES: Record<Headline['tone'], { symbol: string; background: string; color: string }> = {
+  ok: { symbol: '✓ ', background: '#ecfdf5', color: '#065f46' },
+  warn: { symbol: '⚠ ', background: '#fffbeb', color: '#92400e' },
+  alert: { symbol: '⛔ ', background: '#fef2f2', color: '#991b1b' },
+};
+
+function HeadlineBanner({ headline }: { headline: Headline }) {
+  const tone = HEADLINE_STYLES[headline.tone];
+  return (
+    <p role="status" style={{ ...styles.headline, background: tone.background, color: tone.color }}>
+      {tone.symbol}
+      {headline.text}
+    </p>
+  );
+}
+
+function Bar({ title, bar }: { title: string; bar: LimitBar }) {
   return (
     <div>
       <div style={styles.label}>
@@ -63,7 +78,14 @@ function Bar({ title, bar, history }: { title: string; bar: LimitBar; history: R
           {formatPercent(bar.percent)}% · resets {formatResetLabel(bar.resetsAt)}
         </span>
       </div>
-      <div style={styles.track}>
+      <div
+        style={styles.track}
+        role="progressbar"
+        aria-label={title}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(bar.percent)}
+      >
         <div
           style={{
             width: `${Math.min(100, Math.max(0, bar.percent))}%`,
@@ -72,12 +94,6 @@ function Bar({ title, bar, history }: { title: string; bar: LimitBar; history: R
           }}
         />
       </div>
-      {forecast && (
-        <p style={{ ...styles.forecast, ...(forecast.atRisk ? styles.forecastAtRisk : styles.forecastOnTrack) }}>
-          {forecast.atRisk ? '⚠ ' : ''}
-          {forecast.message}
-        </p>
-      )}
     </div>
   );
 }
@@ -93,6 +109,14 @@ export default function App() {
     [],
   );
   const [refreshing, setRefreshing] = useState(false);
+  const sessionHistory = barHistory(recentSnapshots ?? [], 'session');
+  const weeklyHistory = barHistory(recentSnapshots ?? [], 'weekly');
+  const headline = latest
+    ? summarizeHeadroom([
+        { title: 'Session', bar: latest.session, history: sessionHistory },
+        { title: 'Weekly', bar: latest.weekly, history: weeklyHistory },
+      ])
+    : null;
 
   // Ask the background worker for a fresh /usage snapshot every time the popup opens, rather
   // than showing whatever happened to be captured last (which, before the background poll
@@ -120,12 +144,10 @@ export default function App() {
       </div>
       {latest ? (
         <>
-          {latest.session && (
-            <Bar title="Session (5h)" bar={latest.session} history={barHistory(recentSnapshots ?? [], 'session')} />
-          )}
-          {latest.weekly && (
-            <Bar title="Weekly" bar={latest.weekly} history={barHistory(recentSnapshots ?? [], 'weekly')} />
-          )}
+          {/* Only when something needs attention — "all clear" just repeats what the bars show. */}
+          {headline && headline.tone !== 'ok' && <HeadlineBanner headline={headline} />}
+          {latest.session && <Bar title="Session (5h)" bar={latest.session} />}
+          {latest.weekly && <Bar title="Weekly" bar={latest.weekly} />}
           {!latest.session && !latest.weekly && (
             <p style={styles.empty}>Captured data, but no session/weekly bars in it yet.</p>
           )}
@@ -144,8 +166,11 @@ export default function App() {
         </>
       ) : (
         <p style={styles.empty}>
-          No usage data yet. Visit any claude.ai page once so the extension can find your
-          account, then reopen this popup — it polls automatically after that.
+          No usage data yet. Open claude.ai's Settings → Usage page once (or send a message) so the
+          extension can find your account, then reopen this popup — it polls automatically after that.{' '}
+          <a href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
+            Setup checklist
+          </a>
         </p>
       )}
     </main>

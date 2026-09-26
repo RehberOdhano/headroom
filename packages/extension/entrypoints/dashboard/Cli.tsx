@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { extensionMessenger } from '../../lib/messaging.js';
 import type { Settings } from '../../lib/protocol.js';
+import { ConnectDaemonCard } from './ConnectDaemon.tsx';
 import { CliAttributionPanel } from './cli/CliAttributionPanel.tsx';
 import { RetentionWarnings } from './cli/RetentionWarnings.tsx';
 import { SessionSearch } from './cli/SessionSearch.tsx';
@@ -20,14 +21,7 @@ export function DaemonGate({ hint, children }: { hint: string; children: (settin
   if (!settings) return null;
 
   if (!settings.daemonUrl || !settings.daemonToken) {
-    return (
-      <section className="card">
-        <div className="card-header">
-          <h2 className="card-title">Connect the daemon</h2>
-        </div>
-        <p className="hint">{hint}</p>
-      </section>
-    );
+    return <ConnectDaemonCard hint={hint} />;
   }
 
   return <>{children(settings)}</>;

@@ -62,9 +62,9 @@ function weekOverWeek(daily: { date: string; totalTokens: number }[], now: Date 
  *  the thing worth looking at is always the top row, not wherever the daemon happened to list
  *  it. */
 export function CliOverview({ settings }: { settings: Settings }) {
-  const [daily, setDaily] = useState<DaemonResult<{ daily: { date: string; totalTokens: number; totalCost: number }[]; totals: { totalTokens: number; totalCost: number } }> | null>(null);
-  const [byProject, setByProject] = useState<DaemonResult<{ projects: Record<string, { totalTokens: number; totalCost: number }[]> }> | null>(null);
-  const [byModel, setByModel] = useState<DaemonResult<{ models: { modelName: string; inputTokens: number; outputTokens: number; cost: number }[] }> | null>(null);
+  const [daily, setDaily] = useState<DaemonResult<{ daily: { date: string; totalTokens: number }[]; totals: { totalTokens: number } }> | null>(null);
+  const [byProject, setByProject] = useState<DaemonResult<{ projects: Record<string, { totalTokens: number }[]> }> | null>(null);
+  const [byModel, setByModel] = useState<DaemonResult<{ models: { modelName: string; inputTokens: number; outputTokens: number }[] }> | null>(null);
 
   useEffect(() => {
     const since = formatCcusageDate(new Date(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000));
@@ -93,7 +93,6 @@ export function CliOverview({ settings }: { settings: Settings }) {
         .map(([project, days]) => ({
           project,
           tokens: days.reduce((sum, d) => sum + d.totalTokens, 0),
-          cost: days.reduce((sum, d) => sum + d.totalCost, 0),
         }))
         .sort((a, b) => b.tokens - a.tokens)
     : [];
@@ -108,10 +107,6 @@ export function CliOverview({ settings }: { settings: Settings }) {
           <div className="stat-card">
             <div className="stat-value">{formatTokens(daily.data.totals.totalTokens)}</div>
             <div className="stat-label">tokens</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">${daily.data.totals.totalCost.toFixed(2)}</div>
-            <div className="stat-label">equivalent API cost</div>
           </div>
           {reconciliation && (
             <div className="stat-card">
@@ -154,10 +149,10 @@ export function CliOverview({ settings }: { settings: Settings }) {
               onClick={() =>
                 downloadCsv(
                   'headroom-by-project.csv',
-                  ['Project', 'Tokens', 'Cost', '% of week (est.)'],
-                  projectRows.map(({ project, tokens, cost }) => {
+                  ['Project', 'Tokens', '% of week (est.)'],
+                  projectRows.map(({ project, tokens }) => {
                     const weekPercent = reconciliation ? tokens / reconciliation.tokensPerPercent : null;
-                    return [project, tokens, cost.toFixed(2), weekPercent === null ? '' : weekPercent.toFixed(1)];
+                    return [project, tokens, weekPercent === null ? '' : weekPercent.toFixed(1)];
                   }),
                 )
               }
@@ -171,18 +166,16 @@ export function CliOverview({ settings }: { settings: Settings }) {
                 <tr>
                   <th>Project</th>
                   <th>Tokens</th>
-                  <th>Cost</th>
                   {reconciliation && <th>% of week (est.)</th>}
                 </tr>
               </thead>
               <tbody>
-                {projectRows.map(({ project, tokens, cost }) => {
+                {projectRows.map(({ project, tokens }) => {
                   const weekPercent = reconciliation ? tokens / reconciliation.tokensPerPercent : null;
                   return (
                     <tr key={project}>
                       <td>{project}</td>
                       <td>{formatTokens(tokens)}</td>
-                      <td>${cost.toFixed(2)}</td>
                       {reconciliation && <td>{weekPercent === null ? '—' : `~${formatPercentShare(weekPercent)}%`}</td>}
                     </tr>
                   );
@@ -203,12 +196,11 @@ export function CliOverview({ settings }: { settings: Settings }) {
               onClick={() =>
                 downloadCsv(
                   'headroom-by-model.csv',
-                  ['Model', 'Input', 'Output', 'Cost', '% of tokens'],
+                  ['Model', 'Input', 'Output', '% of tokens'],
                   modelRows.map((model) => [
                     model.modelName,
                     model.inputTokens,
                     model.outputTokens,
-                    model.cost.toFixed(2),
                     formatPercentShare(modelTokenShare(model, modelRows)),
                   ]),
                 )
@@ -224,7 +216,6 @@ export function CliOverview({ settings }: { settings: Settings }) {
                   <th>Model</th>
                   <th>Input</th>
                   <th>Output</th>
-                  <th>Cost</th>
                   <th>% of tokens</th>
                 </tr>
               </thead>
@@ -234,7 +225,6 @@ export function CliOverview({ settings }: { settings: Settings }) {
                     <td>{model.modelName}</td>
                     <td>{formatTokens(model.inputTokens)}</td>
                     <td>{formatTokens(model.outputTokens)}</td>
-                    <td>${model.cost.toFixed(2)}</td>
                     <td>{formatPercentShare(modelTokenShare(model, modelRows))}%</td>
                   </tr>
                 ))}

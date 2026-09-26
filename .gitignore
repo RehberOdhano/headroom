@@ -13,3 +13,5 @@ store-assets/
 !packages/daemon/fixtures/**/.claude/
 /CLAUDE.md
 /packages/*/CLAUDE.md
+test-results/
+playwright-report/

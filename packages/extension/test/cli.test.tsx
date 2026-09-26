@@ -176,14 +176,6 @@ describe('CliTab / SearchTab', () => {
         if (requested.includes('/sessions')) {
           return jsonResponse({ sessions: [session], totals });
         }
-        if (requested.includes('/usage/patterns')) {
-          return jsonResponse({
-            skills: [{ name: 'code-review', count: 3 }],
-            commands: [{ name: '/compact', count: 2 }],
-            agents: [{ subagentType: 'Explore', count: 1, inputTokens: 50, outputTokens: 20 }],
-            mcpServers: [{ name: 'claude-in-chrome', count: 7 }],
-          });
-        }
         return jsonResponse({});
       });
 
@@ -191,18 +183,13 @@ describe('CliTab / SearchTab', () => {
 
       // A single model carries 100% of tokens — the model-mix column.
       expect(await screen.findByText('100%')).toBeTruthy();
-      // Top-usage leaderboard, built entirely client-side from /sessions and /aggregate?by=day.
-      expect(await screen.findByText('Priciest sessions')).toBeTruthy();
-      expect(await screen.findByText('Priciest days')).toBeTruthy();
       expect(screen.getAllByText('/proj-a').length).toBeGreaterThan(0);
+      // Token-only: no dollar figures anywhere (API-equivalent cost isn't what a subscriber pays).
+      expect(screen.queryByText('Cost')).toBeNull();
+      expect(screen.queryByText(/equivalent API cost/)).toBeNull();
+      expect(screen.queryByText(/\$\d/)).toBeNull();
       // CSV export buttons added alongside the By-project/By-model tables.
       expect(screen.getAllByText('Download CSV').length).toBe(2);
-      // Skill/slash-command/subagent/MCP usage patterns, from the /usage/patterns route.
-      expect(await screen.findByText('code-review')).toBeTruthy();
-      expect(screen.getByText('/compact')).toBeTruthy();
-      expect(screen.getByText('Explore')).toBeTruthy();
-      expect(screen.getByText('MCP servers')).toBeTruthy();
-      expect(screen.getByText('claude-in-chrome')).toBeTruthy();
     });
 
     it('shows a week-over-week delta computed from the same 30-day daily fetch, no new call', async () => {
@@ -233,50 +220,6 @@ describe('CliTab / SearchTab', () => {
 
       expect(await screen.findByText('▲ 100%')).toBeTruthy();
       expect(screen.getByText('vs last week')).toBeTruthy();
-    });
-
-    it('marks an anomalous session with how many times a typical session it cost', async () => {
-      const session = (overrides: Record<string, unknown>) => ({
-        sessionId: 's1',
-        projectPath: '/proj-a',
-        totalTokens: 100,
-        totalCost: 1,
-        lastActivity: '2026-08-01T00:00:00Z',
-        firstActivity: '2026-08-01T00:00:00Z',
-        inputTokens: 60,
-        outputTokens: 40,
-        cacheCreationTokens: 0,
-        cacheReadTokens: 0,
-        modelBreakdowns: [],
-        modelsUsed: [],
-        ...overrides,
-      });
-      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
-        const requested = String(url);
-        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
-        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: {}, totals: zeroTotals });
-        if (requested.includes('/aggregate?by=model')) return jsonResponse({ models: [] });
-        if (requested.includes('/sessions')) {
-          return jsonResponse({
-            sessions: [
-              session({ sessionId: 'a', projectPath: '/proj-a', totalCost: 1 }),
-              session({ sessionId: 'b', projectPath: '/proj-b', totalCost: 1.2 }),
-              session({ sessionId: 'c', projectPath: '/proj-runaway', totalCost: 20 }),
-            ],
-            totals: zeroTotals,
-          });
-        }
-        return jsonResponse({});
-      });
-
-      render(<CliTab />);
-      fireEvent.click(await screen.findByRole('button', { name: 'Top usage' }));
-
-      // Costs: 1, 1.2, 20 -> median (typical) is 1.2, so the $20 session is ~17x that.
-      const runawayRow = (await screen.findByText('/proj-runaway')).closest('div')!;
-      expect(runawayRow.textContent).toContain('17× a typical session');
-      const normalRow = screen.getByText('/proj-a').closest('div')!;
-      expect(normalRow.textContent).not.toContain('a typical session');
     });
 
     it('shows a weekly CLI-vs-chat split chart once at least two distinct weeks of data exist', async () => {
@@ -325,7 +268,7 @@ describe('CliTab / SearchTab', () => {
       expect(screen.getByText('CLI (est.)')).toBeTruthy();
     });
 
-    it('switches CLI attribution sub-views by toggling hidden, not unmounting them, and keeps retention warnings outside the panel', async () => {
+    it('renders retention warnings alongside the attribution panel', async () => {
       const now = new Date();
       const oldEnough = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000).toISOString();
       const session = {
@@ -348,52 +291,14 @@ describe('CliTab / SearchTab', () => {
         if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: {}, totals: zeroTotals });
         if (requested.includes('/aggregate?by=model')) return jsonResponse({ models: [] });
         if (requested.includes('/sessions')) return jsonResponse({ sessions: [session], totals: zeroTotals });
-        if (requested.includes('/usage/patterns')) return jsonResponse({ skills: [], commands: [], agents: [] });
         return jsonResponse({});
       });
 
       render(<CliTab />);
 
-      // Retention warnings render outside/above the sub-nav'd panel — always visible regardless
-      // of which CLI attribution sub-view is selected, since it's a time-sensitive alert.
+      // Time-sensitive, so it renders above the attribution panel rather than inside it.
       expect(await screen.findByText('Sessions nearing cleanup')).toBeTruthy();
-
-      const overviewPanel = (await screen.findByText('No CLI usage recorded yet in the last 30 days.')).closest('div')!;
-      expect(overviewPanel.hasAttribute('hidden')).toBe(false);
-
-      fireEvent.click(screen.getByRole('button', { name: 'Top usage' }));
-      // Both sub-views are mounted throughout — switching just flips which one is hidden.
-      expect(overviewPanel.hasAttribute('hidden')).toBe(true);
-      expect(screen.getByText('Sessions nearing cleanup')).toBeTruthy();
-    });
-
-    it('shows the busiest day/hour bucket on the "By time of day" heatmap sub-view', async () => {
-      // Constructed with the local-time `Date` constructor so this is deterministic regardless
-      // of the test runner's own timezone — see lib/heatmap.ts's tests for the same approach.
-      const busyLocal = new Date(2026, 7, 24, 21, 0); // 2026-08-24 is a Monday.
-      const quietLocal = new Date(2026, 7, 24, 9, 0);
-
-      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
-        const requested = String(url);
-        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
-        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: {}, totals: zeroTotals });
-        if (requested.includes('/aggregate?by=model')) return jsonResponse({ models: [] });
-        if (requested.includes('/sessions')) {
-          return jsonResponse({
-            sessions: [
-              daemonSession({ sessionId: 'quiet', totalCost: 0.5, lastActivity: quietLocal.toISOString() }),
-              daemonSession({ sessionId: 'busy', totalCost: 9, lastActivity: busyLocal.toISOString() }),
-            ],
-            totals: zeroTotals,
-          });
-        }
-        return jsonResponse({});
-      });
-
-      render(<CliTab />);
-      fireEvent.click(await screen.findByRole('button', { name: 'By time of day' }));
-
-      expect(await screen.findByText(/Priciest: Mon around 9p \(\$9\.00 across 1 session\)/)).toBeTruthy();
+      expect(await screen.findByText('No CLI usage recorded yet in the last 30 days.')).toBeTruthy();
     });
   });
 });

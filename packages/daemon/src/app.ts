@@ -11,8 +11,6 @@ import {
 } from './adapters/ccusage.js';
 import { aggregateByModel } from './aggregate.js';
 import { exportSessionMarkdown, findKnownProjectDirs, searchSessions } from './adapters/session-log.js';
-import { aggregateUsagePatterns } from './adapters/usage-patterns.js';
-import { getGitActivity } from './adapters/git-activity.js';
 import {
   findClaudeMdFiles,
   isValidProjectDir,
@@ -180,8 +178,6 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
-  app.get('/usage/patterns', (c) => c.json(aggregateUsagePatterns(claudeConfigDir)));
-
   app.get('/config/projects', (c) => c.json({ projects: findKnownProjectDirs(claudeConfigDir) }));
 
   app.get('/config', (c) => {
@@ -199,18 +195,6 @@ export function createApp(options: CreateAppOptions = {}) {
       return c.json({ error: 'invalid_query', message: '?projectDir must be an existing absolute directory' }, 400);
     }
     return c.json({ files: findClaudeMdFiles(projectDir) });
-  });
-
-  app.get('/config/git-activity', async (c) => {
-    const projectDir = c.req.query('projectDir');
-    const since = c.req.query('since');
-    if (!projectDir || !since) {
-      return c.json({ error: 'invalid_query', message: '?projectDir and ?since are required' }, 400);
-    }
-    if (!isValidProjectDir(projectDir)) {
-      return c.json({ error: 'invalid_query', message: '?projectDir must be an existing absolute directory' }, 400);
-    }
-    return c.json(await getGitActivity(projectDir, since));
   });
 
   app.get('/config/claude-md/content', (c) => {

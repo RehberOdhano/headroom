@@ -5,12 +5,10 @@ import {
   daemonModelAggregateResponseSchema,
   daemonSearchResponseSchema,
   daemonSessionsReportSchema,
-  usagePatternsResponseSchema,
   bootstrapResultSchema,
   claudeConfigSnapshotSchema,
   claudeMdContentResponseSchema,
   claudeMdListResponseSchema,
-  gitActivityResponseSchema,
   knownProjectsResponseSchema,
   projectDetectionResponseSchema,
   settingsLayerSchema,
@@ -26,12 +24,10 @@ import {
   type DaemonProjectDailyReport,
   type DaemonSearchMatch,
   type DaemonSessionsReport,
-  type GitActivityResponse,
   type KnownProject,
   type PermissionEffect,
   type ProjectDetectionResult,
   type SettingsLayer,
-  type UsagePatterns,
 } from '@headroom/shared';
 import type { Settings } from './protocol.js';
 
@@ -107,13 +103,6 @@ export function getDaemonByModel(settings: Settings, params?: { since?: string; 
   return daemonFetch(settings, `/aggregate?by=model${toQuery(params, '&')}`, daemonModelAggregateResponseSchema);
 }
 
-/** Skill/slash-command frequency and per-subagent-type token totals — a separate call from the
- *  three `/aggregate` facets above since it's sourced from raw session-transcript scanning
- *  (packages/daemon/src/adapters/usage-patterns.ts), not ccusage's own aggregates. */
-export function getDaemonUsagePatterns(settings: Settings): Promise<DaemonResult<UsagePatterns>> {
-  return daemonFetch(settings, '/usage/patterns', usagePatternsResponseSchema);
-}
-
 export function searchDaemonSessions(
   settings: Settings,
   query: string,
@@ -149,14 +138,6 @@ export function getDaemonConfigProjects(settings: Settings): Promise<DaemonResul
 export function getDaemonConfig(settings: Settings, projectDir?: string): Promise<DaemonResult<ClaudeConfigSnapshot>> {
   const query = projectDir ? `?projectDir=${encodeURIComponent(projectDir)}` : '';
   return daemonFetch(settings, `/config${query}`, claudeConfigSnapshotSchema);
-}
-
-export function getDaemonGitActivity(settings: Settings, projectDir: string, since: string): Promise<DaemonResult<GitActivityResponse>> {
-  return daemonFetch(
-    settings,
-    `/config/git-activity?projectDir=${encodeURIComponent(projectDir)}&since=${encodeURIComponent(since)}`,
-    gitActivityResponseSchema,
-  );
 }
 
 export function getDaemonClaudeMdList(settings: Settings, projectDir: string): Promise<DaemonResult<{ files: ClaudeMdFile[] }>> {

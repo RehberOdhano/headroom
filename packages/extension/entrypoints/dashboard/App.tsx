@@ -1,15 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useState } from 'react';
-import { forecastBurnRate, soonestExpiringPromoTranche, type PrepaidCreditsSnapshot, type TimedPercent } from '@headroom/shared';
+import { Fragment, useState } from 'react';
+import { forecastBurnRate, type TimedPercent } from '@headroom/shared';
 import { db, type LimitSnapshotRecord } from '../../lib/db.js';
 import { barColor, describeForecast, describeSource, formatPercent, formatResetLabel } from '../../lib/format.js';
 import { sparklinePointsAttr, toSparklinePoints } from '../../lib/chart.js';
 import { barHistory, withinWindow, type BarKey } from '../../lib/history.js';
-import { extensionMessenger } from '../../lib/messaging.js';
-import { DEFAULT_SETTINGS } from '../../lib/settings.js';
+import { DEFAULT_SETTINGS, getSettings } from '../../lib/settings.js';
 import { CliTab, SearchTab } from './Cli.tsx';
 import { ConfigTab } from './Config.tsx';
 import { NewProjectTab } from './NewProject.tsx';
+import { ReleaseNotesBanner } from './UsageExtras.tsx';
 
 const WINDOWS = {
   '24h': 24 * 60 * 60 * 1000,
@@ -19,11 +19,11 @@ const WINDOWS = {
 type WindowKey = keyof typeof WINDOWS;
 
 const TABS = [
-  { key: 'charts', label: 'Usage & Forecast' },
-  { key: 'cli', label: 'CLI Attribution' },
-  { key: 'search', label: 'Search' },
-  { key: 'config', label: 'Guardrails' },
-  { key: 'new-project', label: 'New Project' },
+  { key: 'charts', label: 'Usage & Forecast', advanced: false, needsDaemon: false },
+  { key: 'cli', label: 'CLI Attribution', advanced: false, needsDaemon: false },
+  { key: 'search', label: 'Search', advanced: false, needsDaemon: true },
+  { key: 'config', label: 'Guardrails', advanced: true, needsDaemon: true },
+  { key: 'new-project', label: 'New Project', advanced: true, needsDaemon: true },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -86,23 +86,17 @@ function Sparkline({ series, thresholds }: { series: TimedPercent[]; thresholds:
   );
 }
 
-/**
- * Both blocks below are claude.ai's own single "Usage credits" feature (Settings > Usage) —
- * spend against a monthly $ limit, funded from a balance that includes promotional grants — just
- * split across two different captured endpoints (`/usage`'s `extra_usage` vs
- * `/prepaid/credits`) on our side. One card with two labeled subsections, not two cards, so that
- * split doesn't read as two unrelated features.
- */
-function UsageCreditsSection({ snapshots, prepaidCredits }: { snapshots: LimitSnapshotRecord[]; prepaidCredits: PrepaidCreditsSnapshot | null }) {
+/** claude.ai's own "Usage credits" spend (`/usage`'s `extra_usage`) — pay-as-you-go spend this
+ *  month against a monthly $ limit. Hidden entirely for accounts that don't have it enabled. */
+function UsageCreditsSection({ snapshots }: { snapshots: LimitSnapshotRecord[] }) {
   // No captured snapshot has extra-credits info at all -> most accounts don't have pay-as-you-go
   // credits enabled. Its fields can otherwise be individually null even when present, so the
   // render below branches on which ones are actually populated.
   const info = [...snapshots].reverse().find((s) => s.extraCredits)?.extraCredits;
-  if (!info && !prepaidCredits) return null;
+  if (!info) return null;
 
   const hasAmounts = info != null && info.usedAmount !== null && info.limitAmount !== null;
   const amountsText = hasAmounts ? `${info.currency ?? ''} ${info.usedAmount!.toFixed(2)} / ${info.limitAmount!.toFixed(2)}` : null;
-  const soonest = prepaidCredits ? soonestExpiringPromoTranche(prepaidCredits) : null;
 
   return (
     <section className="card">
@@ -132,20 +126,6 @@ function UsageCreditsSection({ snapshots, prepaidCredits }: { snapshots: LimitSn
         </>
       )}
 
-      {prepaidCredits && (
-        <>
-          <p className="table-title">Balance</p>
-          <p className="hint">
-            {prepaidCredits.currency} {prepaidCredits.balanceAmount.toFixed(2)} available · auto-reload {prepaidCredits.autoReloadEnabled ? 'on' : 'off'}
-          </p>
-          {soonest && (
-            <p className="hint">
-              {soonest.currency} {soonest.remainingAmount.toFixed(2)} of promotional credit expires{' '}
-              {new Date(soonest.expiresAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}.
-            </p>
-          )}
-        </>
-      )}
     </section>
   );
 }
@@ -164,7 +144,7 @@ function BarSection({
   const series = barHistory(snapshots, barKey);
   const latestSnapshot = [...snapshots].reverse().find((s) => s[barKey]) ?? null;
   const latestBar = latestSnapshot?.[barKey] ?? null;
-  const forecast = latestBar ? describeForecast(forecastBurnRate(series), latestBar.resetsAt) : null;
+  const forecast = latestBar ? describeForecast(forecastBurnRate(series), latestBar.resetsAt, latestBar.percent) : null;
   const low = series.length > 0 ? Math.min(...series.map((p) => p.percent)) : null;
   const high = series.length > 0 ? Math.max(...series.map((p) => p.percent)) : null;
 
@@ -222,16 +202,30 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('charts');
   const [pendingGuardrailsProjectDir, setPendingGuardrailsProjectDir] = useState<string | null>(null);
   const [windowKey, setWindowKey] = useState<WindowKey>('7d');
-  const [alertThresholds, setAlertThresholds] = useState<number[]>(DEFAULT_SETTINGS.alertThresholds);
+  // Live (Dexie broadcasts writes across extension contexts), so a daemon that pairs while this
+  // page is open reveals the CLI tabs without a reload.
+  const settings = useLiveQuery(() => getSettings(), []);
+  const alertThresholds = settings?.alertThresholds ?? DEFAULT_SETTINGS.alertThresholds;
+  const daemonConnected = Boolean(settings?.daemonUrl && settings?.daemonToken);
+  // Progressive disclosure: until the daemon is connected, only the tabs that work without it
+  // (plus "CLI Attribution", which doubles as the install prompt) are shown.
+  const visibleTabs = TABS.filter((tab) => daemonConnected || !tab.needsDaemon);
   const allSnapshots = useLiveQuery(() => db.limitSnapshots.orderBy('capturedAt').toArray(), []);
-  const prepaidCreditsRecord = useLiveQuery(() => db.meta.get('prepaidCredits'), []);
-  const prepaidCredits: PrepaidCreditsSnapshot | null = prepaidCreditsRecord
-    ? (JSON.parse(prepaidCreditsRecord.value) as PrepaidCreditsSnapshot)
-    : null;
 
-  useEffect(() => {
-    void extensionMessenger.sendMessage('getSettings').then((settings) => setAlertThresholds(settings.alertThresholds));
-  }, []);
+  // WAI-ARIA tabs: arrow keys move between tabs (roving tabindex), Home/End jump to the ends.
+  function onTabKeyDown(event: React.KeyboardEvent) {
+    const keys = visibleTabs.map((t) => t.key as TabKey);
+    const current = keys.indexOf(activeTab);
+    let next = current;
+    if (event.key === 'ArrowRight') next = (current + 1) % keys.length;
+    else if (event.key === 'ArrowLeft') next = (current - 1 + keys.length) % keys.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = keys.length - 1;
+    else return;
+    event.preventDefault();
+    setActiveTab(keys[next]!);
+    document.getElementById(`tab-${keys[next]}`)?.focus();
+  }
 
   const windowed = allSnapshots ? withinWindow(allSnapshots, new Date(Date.now() - WINDOWS[windowKey])) : [];
 
@@ -248,22 +242,33 @@ export default function App() {
       {/* All three panels stay mounted, toggled via `hidden` rather than conditionally rendered,
           so switching tabs doesn't lose the search box's query/results or refetch daemon data
           every time you glance at another tab. */}
-      <nav className="tabs" role="tablist" aria-label="Dashboard sections">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.key}
-            className="tab-button"
-            onClick={() => setActiveTab(tab.key)}
-          >
-            {tab.label}
-          </button>
+      <ReleaseNotesBanner />
+
+      <nav className="tabs" role="tablist" aria-label="Dashboard sections" onKeyDown={onTabKeyDown}>
+        {visibleTabs.map((tab, index) => (
+          <Fragment key={tab.key}>
+            {tab.advanced && !visibleTabs[index - 1]?.advanced && (
+              <span className="tabs-divider" aria-hidden="true">
+                Advanced
+              </span>
+            )}
+            <button
+              type="button"
+              role="tab"
+              id={`tab-${tab.key}`}
+              aria-controls={`panel-${tab.key}`}
+              aria-selected={activeTab === tab.key}
+              tabIndex={activeTab === tab.key ? 0 : -1}
+              className="tab-button"
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          </Fragment>
         ))}
       </nav>
 
-      <div hidden={activeTab !== 'charts'} role="tabpanel">
+      <div hidden={activeTab !== 'charts'} role="tabpanel" id="panel-charts" aria-labelledby="tab-charts">
         {allSnapshots === undefined ? (
           <p className="hint">Loading…</p>
         ) : (
@@ -285,7 +290,7 @@ export default function App() {
               </div>
             )}
 
-            <UsageCreditsSection snapshots={allSnapshots} prepaidCredits={prepaidCredits} />
+            <UsageCreditsSection snapshots={allSnapshots} />
 
             <p className="page-footer">
               {allSnapshots.length} snapshot{allSnapshots.length === 1 ? '' : 's'} stored locally
@@ -297,29 +302,33 @@ export default function App() {
         )}
       </div>
 
-      <div hidden={activeTab !== 'cli'} role="tabpanel">
-        <CliTab />
+      <div hidden={activeTab !== 'cli'} role="tabpanel" id="panel-cli" aria-labelledby="tab-cli">
+        <CliTab key={String(daemonConnected)} />
       </div>
 
-      <div hidden={activeTab !== 'search'} role="tabpanel">
-        <SearchTab />
-      </div>
+      {daemonConnected && (
+        <>
+          <div hidden={activeTab !== 'search'} role="tabpanel" id="panel-search" aria-labelledby="tab-search">
+            <SearchTab />
+          </div>
 
-      <div hidden={activeTab !== 'config'} role="tabpanel">
-        <ConfigTab
-          pendingProjectDir={pendingGuardrailsProjectDir}
-          onPendingProjectDirApplied={() => setPendingGuardrailsProjectDir(null)}
-        />
-      </div>
+          <div hidden={activeTab !== 'config'} role="tabpanel" id="panel-config" aria-labelledby="tab-config">
+            <ConfigTab
+              pendingProjectDir={pendingGuardrailsProjectDir}
+              onPendingProjectDirApplied={() => setPendingGuardrailsProjectDir(null)}
+            />
+          </div>
 
-      <div hidden={activeTab !== 'new-project'} role="tabpanel">
-        <NewProjectTab
-          onProjectReady={(targetDir) => {
-            setPendingGuardrailsProjectDir(targetDir);
-            setActiveTab('config');
-          }}
-        />
-      </div>
+          <div hidden={activeTab !== 'new-project'} role="tabpanel" id="panel-new-project" aria-labelledby="tab-new-project">
+            <NewProjectTab
+              onProjectReady={(targetDir) => {
+                setPendingGuardrailsProjectDir(targetDir);
+                setActiveTab('config');
+              }}
+            />
+          </div>
+        </>
+      )}
     </main>
   );
 }

@@ -1,25 +1,21 @@
 import {
   messageLimitEventSchema,
-  normalizePrepaidCredits,
   normalizeUsageResponse,
-  prepaidCreditsResponseSchema,
   rateLimitEventSchema,
-  soonestExpiringPromoTranche,
   upgradeSnapshotFromCodeRateLimitEvent,
   upgradeSnapshotFromMessageLimit,
   usageResponseSchema,
   type LimitBar,
   type LimitSnapshot,
-  type PrepaidCreditsSnapshot,
 } from '@headroom/shared';
-import { findAnomalousSessions, type DaemonSession } from '@headroom/shared';
 import { setBadgeBackgroundColor, setBadgeText } from '../lib/action-badge.js';
 import { extensionMessenger, sendToTabIgnoringMissingReceiver } from '../lib/messaging.js';
-import { db } from '../lib/db.js';
+import { db, type RawRecord } from '../lib/db.js';
 import { thresholdCrossed, type AlertState } from '../lib/alerts.js';
-import { formatCcusageDate, formatResetLabel, formatTokens } from '../lib/format.js';
-import { getDaemonByProject, getDaemonDaily, getDaemonSessions } from '../lib/daemon-client.js';
-import { isWithinQuietHours } from '../lib/quiet-hours.js';
+import { barHistory } from '../lib/history.js';
+import { paceAlertFor } from '../lib/pace-alert.js';
+import { formatResetLabel } from '../lib/format.js';
+import { getDaemonSessions } from '../lib/daemon-client.js';
 import { attemptPairing } from '../lib/pairing.js';
 import { findRetentionWarnings } from '../lib/retention.js';
 import { getSettings, updateSettings } from '../lib/settings.js';
@@ -45,7 +41,7 @@ export default defineBackground(() => {
   log('installed — listening for captures');
 
   extensionMessenger.onMessage('captured', async (message) => {
-    const id = await db.rawRecords.add(message.data);
+    const id = await storeRawRecord(message.data);
     log('stored record', id, message.data.endpoint, message.data.capturedAt);
 
     if (message.data.orgId) {
@@ -83,6 +79,16 @@ export default defineBackground(() => {
   // Keeps bars fresh without requiring the user to visit claude.ai's Settings > Usage page —
   // that page is the *only* place claude.ai's own frontend fetches /usage, so without this
   // the extension would otherwise stay silent until the user happened to land there.
+  // Onboarding: a first install lands on the options page's setup checklist instead of leaving
+  // the user to guess what to do next. Updates deliberately don't — they get the dashboard's
+  // one-time "what's new" banner instead.
+  browser.runtime.onInstalled.addListener((details) => {
+    if (details.reason === 'install') void browser.runtime.openOptionsPage();
+    // Versions before the what's-new banner never recorded `lastSeenVersion`, so without this an
+    // upgrading user would look exactly like a fresh install and never see the notes. The
+    // previous version is the truthful "last seen" here.
+    if (details.reason === 'update' && details.previousVersion) void recordPreviousVersion(details.previousVersion);
+  });
   browser.alarms.create(POLL_ALARM_NAME, { periodInMinutes: POLL_INTERVAL_MINUTES });
   // Auto-pairing (lib/pairing.ts): keeps trying until a token is configured, so a user who
   // never opens the options page still ends up connected once the daemon is installed —
@@ -91,10 +97,6 @@ export default defineBackground(() => {
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === POLL_ALARM_NAME) {
       void pollUsage();
-      void pollPrepaidCredits();
-      void checkCliBudget();
-      void checkPerProjectCliBudgets();
-      void checkWeeklyDigest();
       void checkSessionsAndBadge();
     }
     // Once a token is configured, pairing itself becomes a no-op (tryPairNow returns early) —
@@ -155,10 +157,14 @@ async function getStoredDaemonHealth(): Promise<DaemonHealth | null> {
   return stored ? (JSON.parse(stored.value) as DaemonHealth) : null;
 }
 
+async function recordPreviousVersion(previousVersion: string): Promise<void> {
+  if (!(await db.meta.get('lastSeenVersion'))) await db.meta.put({ key: 'lastSeenVersion', value: previousVersion });
+}
+
 async function pollUsage(): Promise<void> {
   const cached = await db.meta.get('orgId');
   if (!cached) {
-    log('poll skipped — no org id known yet (visit claude.ai once)');
+    log('poll skipped — no org id known yet (open claude.ai Settings > Usage once)');
     return;
   }
 
@@ -172,65 +178,12 @@ async function pollUsage(): Promise<void> {
     }
     const raw: unknown = await response.json();
     const capturedAt = new Date().toISOString();
-    await db.rawRecords.add({ endpoint: 'usage', capturedAt, raw });
+    await storeRawRecord({ endpoint: 'usage', capturedAt, raw });
     await normalizeAndStoreUsage(raw, capturedAt);
     log('poll captured a fresh usage snapshot');
   } catch (error) {
     log('poll fetch threw', error);
   }
-}
-
-/**
- * Purchased/promotional credit balance — a separate endpoint from `/usage`, polled on the same
- * tick. Stored as a single JSON snapshot in `db.meta` (key `prepaidCredits`) rather than an
- * appended `limitSnapshots`-style history: unlike a limit bar, a credit balance has no "history
- * over the reset window" worth charting, only a current value.
- */
-async function pollPrepaidCredits(): Promise<void> {
-  const cached = await db.meta.get('orgId');
-  if (!cached) return;
-
-  try {
-    const response = await fetch(`https://claude.ai/api/organizations/${cached.value}/prepaid/credits`, {
-      credentials: 'include',
-    });
-    if (!response.ok) {
-      log('prepaid credits poll fetch failed', response.status);
-      return;
-    }
-    const raw: unknown = await response.json();
-    const result = prepaidCreditsResponseSchema.safeParse(raw);
-    if (!result.success) {
-      log('prepaid credits payload failed schema validation, skipping snapshot', result.error.issues.slice(0, 3));
-      return;
-    }
-    const snapshot = normalizePrepaidCredits(result.data, new Date().toISOString());
-    await db.meta.put({ key: 'prepaidCredits', value: JSON.stringify(snapshot) });
-    await checkPromoCreditsExpiring(snapshot);
-    log('polled prepaid credits', snapshot.balanceAmount);
-  } catch (error) {
-    log('prepaid credits poll fetch threw', error);
-  }
-}
-
-const PROMO_EXPIRY_WARNING_DAYS = 7;
-
-/** Warns once per promo tranche (keyed by its own `expiresAt`, so a new grant re-arms the alert)
- *  as it enters its final week — the money is otherwise silently lost with no reminder anywhere
- *  in claude.ai's own UI outside this settings page. */
-async function checkPromoCreditsExpiring(snapshot: PrepaidCreditsSnapshot): Promise<void> {
-  const soonest = soonestExpiringPromoTranche(snapshot);
-  if (!soonest) return;
-
-  const daysLeft = (new Date(soonest.expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
-  if (daysLeft < 0 || daysLeft > PROMO_EXPIRY_WARNING_DAYS) return;
-
-  const settings = await getSettings();
-  const fired = await notifyOnce(`promoCreditsExpiringAlerted:${soonest.expiresAt}`, settings, {
-    title: 'Claude usage: promotional credit expiring soon',
-    message: `$${soonest.remainingAmount.toFixed(2)} in promotional credit expires ${formatResetLabel(soonest.expiresAt)}.`,
-  });
-  if (fired) log('promo credits expiring alert fired', soonest.expiresAt, soonest.remainingAmount);
 }
 
 async function normalizeAndStoreUsage(raw: unknown, capturedAt: string): Promise<void> {
@@ -298,6 +251,7 @@ async function storeSnapshotAndReact(snapshot: LimitSnapshot): Promise<void> {
   log('stored limit snapshot', id, snapshot.source, snapshot.session?.percent, snapshot.weekly?.percent);
   await pruneOldSnapshots();
   await checkThresholdAlerts(snapshot);
+  await checkPaceAlerts(snapshot);
   await pushBadgeUpdate(snapshot);
 }
 
@@ -322,6 +276,20 @@ async function pushBadgeUpdate(snapshot: LimitSnapshot): Promise<void> {
   }
 }
 
+/** Raw captures only feed the options page's "Export fixtures" (schema-building samples), so a
+ *  recent handful is plenty — without a cap, every 5-minute poll stored another full /usage body
+ *  forever. Also trims the backlog on installs that predate the cap, on their next capture. */
+const MAX_RAW_RECORDS = 50;
+
+async function storeRawRecord(record: Omit<RawRecord, 'id'>): Promise<number | undefined> {
+  const id = await db.rawRecords.add(record);
+  const excess = (await db.rawRecords.count()) - MAX_RAW_RECORDS;
+  if (excess > 0) {
+    await db.rawRecords.bulkDelete(await db.rawRecords.orderBy('capturedAt').limit(excess).primaryKeys());
+  }
+  return id;
+}
+
 async function pruneOldSnapshots(): Promise<void> {
   const settings = await getSettings();
   const cutoff = new Date(Date.now() - settings.snapshotRetentionDays * 24 * 60 * 60 * 1000).toISOString();
@@ -335,6 +303,23 @@ async function checkThresholdAlerts(snapshot: LimitSnapshot): Promise<void> {
   await checkBarAlert('weekly', 'Weekly', snapshot.weekly, settings);
 }
 
+/** Opt-in forecast-based heads-up — see lib/pace-alert.ts for what qualifies. Only the current
+ *  run matters to the forecast, so a bounded recent slice of history is enough. */
+async function checkPaceAlerts(snapshot: LimitSnapshot): Promise<void> {
+  const settings = await getSettings();
+  if (!settings.paceAlertEnabled) return;
+
+  const recent = await db.limitSnapshots.orderBy('capturedAt').reverse().limit(100).toArray();
+  const bars = [
+    { key: 'session', label: 'Session (5h)', bar: snapshot.session },
+    { key: 'weekly', label: 'Weekly', bar: snapshot.weekly },
+  ] as const;
+  for (const { key, label, bar } of bars) {
+    const alert = paceAlertFor(label, bar, barHistory(recent, key));
+    if (alert) await notifyOnce(`paceAlerted:${key}:${alert.windowKey}`, alert);
+  }
+}
+
 /** The one place that actually calls `browser.notifications.create` — every check below builds
  *  a title/message and decides for itself whether this is a good time to notify, but none of
  *  them need to know what a notification object looks like. */
@@ -343,17 +328,13 @@ async function sendNotification(title: string, message: string): Promise<void> {
 }
 
 /**
- * Fires a notification at most once per `metaKey`, honoring quiet hours. If the key is already
- * recorded, or `now` falls inside quiet hours, this is a no-op that leaves state untouched —
- * quiet hours are meant to delay a suppressed alert to the next check, not lose it. Fits any
- * alert whose dedup is "have I ever fired for this exact key" (a CLI budget for a given month, a
- * specific anomalous session) — `checkBarAlert` below needs its own logic instead, since
- * "crossed a threshold" has to compare against the *previous* crossing, not just check a key's
- * existence.
+ * Fires a notification at most once per `metaKey` (a limit window, here). Fits any alert whose
+ * dedup is "have I ever fired for this exact key" — `checkBarAlert` below needs its own logic
+ * instead, since "crossed a threshold" has to compare against the *previous* crossing, not just
+ * check a key's existence.
  */
-async function notifyOnce(metaKey: string, settings: Settings, notification: { title: string; message: string }): Promise<boolean> {
+async function notifyOnce(metaKey: string, notification: { title: string; message: string }): Promise<boolean> {
   if (await db.meta.get(metaKey)) return false;
-  if (isWithinQuietHours(new Date(), settings)) return false;
 
   await db.meta.put({ key: metaKey, value: 'true' });
   await sendNotification(notification.title, notification.message);
@@ -375,149 +356,17 @@ async function checkBarAlert(
   const crossed = thresholdCrossed(bar, lastAlert, settings.alertThresholds);
   if (crossed === null) return;
 
-  // Checked *after* deciding a threshold was crossed but *before* persisting dedup state: a
-  // suppressed alert isn't lost, it just fires on the next check once quiet hours end, since
-  // `thresholdCrossed` will still see the same not-yet-recorded crossing then.
-  if (isWithinQuietHours(new Date(), settings)) return;
-
   await db.meta.put({ key: metaKey, value: JSON.stringify({ resetsAt: bar.resetsAt, threshold: crossed }) });
   await sendNotification(`Claude usage: ${label} at ${crossed}%+`, `${bar.percent}% used — resets ${formatResetLabel(bar.resetsAt)}.`);
   log('threshold alert fired', key, crossed, bar.percent);
 }
 
 /**
- * A self-set $ budget, independent of `alertThresholds` (which only ever tracks claude.ai's own
- * plan-limit percentages, never $ CLI cost) — lets someone say "tell me if my CLI spend crosses
- * $50 this month" using the same figure CLI Attribution already shows. No-ops with no budget set
- * or no daemon configured, same "daemon is optional" gating every other daemon-backed feature
- * already has. The dedup key includes the calendar month, so it naturally re-arms next month
- * with no cleanup needed.
- */
-function currentMonthKey(now: Date = new Date()): string {
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-}
-
-async function checkCliBudget(): Promise<void> {
-  const settings = await getSettings();
-  if (settings.cliMonthlyBudget === null || !settings.daemonUrl || !settings.daemonToken) return;
-
-  const now = new Date();
-  const since = formatCcusageDate(new Date(now.getFullYear(), now.getMonth(), 1));
-  const result = await getDaemonDaily(settings, { since });
-  if (!result.ok) return;
-
-  const spent = result.data.totals.totalCost;
-  if (spent < settings.cliMonthlyBudget) return;
-
-  const fired = await notifyOnce(`cliBudgetAlerted:${currentMonthKey(now)}`, settings, {
-    title: 'Claude usage: CLI budget exceeded',
-    message: `$${spent.toFixed(2)} spent this month via the CLI — over your $${settings.cliMonthlyBudget.toFixed(2)} budget.`,
-  });
-  if (fired) log('CLI budget alert fired', spent, settings.cliMonthlyBudget);
-}
-
-/**
- * Per-project variant of `checkCliBudget` — additive, not a replacement. Fetches `/aggregate?
- * by=project` **once** and shares it across every configured project rather than one fetch per
- * project. Converts each real `projectDir` to ccusage's own slug form (`/` -> `-`, the same
- * transform Claude Code applies when naming a project's session-log directory) to look it up in
- * the response — only ever real-path -> slug, never the other direction (a literal `-` in a real
- * directory name would make reversing it ambiguous).
- */
-async function checkPerProjectCliBudgets(): Promise<void> {
-  const settings = await getSettings();
-  if (settings.perProjectCliBudgets.length === 0 || !settings.daemonUrl || !settings.daemonToken) return;
-
-  const now = new Date();
-  const since = formatCcusageDate(new Date(now.getFullYear(), now.getMonth(), 1));
-  const result = await getDaemonByProject(settings, { since });
-  if (!result.ok) return;
-
-  const monthKey = currentMonthKey(now);
-  for (const entry of settings.perProjectCliBudgets) {
-    const slug = entry.projectDir.replace(/\//g, '-');
-    const days = result.data.projects[slug];
-    if (!days) continue;
-
-    const spent = days.reduce((sum, d) => sum + d.totalCost, 0);
-    if (spent < entry.monthlyBudget) continue;
-
-    const fired = await notifyOnce(`cliBudgetAlerted:${slug}:${monthKey}`, settings, {
-      title: 'Claude usage: project CLI budget exceeded',
-      message: `${entry.projectDir}: $${spent.toFixed(2)} spent this month — over your $${entry.monthlyBudget.toFixed(2)} budget.`,
-    });
-    if (fired) log('per-project CLI budget alert fired', entry.projectDir, spent, entry.monthlyBudget);
-  }
-}
-
-const DIGEST_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
-
-/**
- * Opt-in weekly summary notification. Built primarily from `db.limitSnapshots` (always local, no
- * daemon needed) so it's useful to every user, not just the subset who've installed the daemon —
- * matches this project's own "daemon is optional" principle. If the daemon *is* configured,
- * appends a second line with CLI tokens/cost for the week. Fires on whichever `POLL_ALARM_NAME`
- * tick first lands at least 7 days after the last one — not a precise weekly cron, just "roughly
- * once a week", which is all a digest needs to be.
- */
-async function checkWeeklyDigest(): Promise<void> {
-  const settings = await getSettings();
-  if (!settings.weeklyDigestEnabled) return;
-
-  const lastSentAt = await db.meta.get('lastWeeklyDigestAt');
-  const now = Date.now();
-  if (lastSentAt && now - new Date(lastSentAt.value).getTime() < DIGEST_INTERVAL_MS) return;
-
-  const weekAgoIso = new Date(now - DIGEST_INTERVAL_MS).toISOString();
-  const weekSnapshots = await db.limitSnapshots.where('capturedAt').aboveOrEqual(weekAgoIso).toArray();
-  if (weekSnapshots.length === 0) return; // nothing to report yet — don't send an empty digest
-
-  const peakPercent = (key: 'session' | 'weekly') => Math.max(0, ...weekSnapshots.map((s) => s[key]?.percent ?? 0));
-  const lines = [`Peak session: ${Math.round(peakPercent('session'))}% · Peak weekly: ${Math.round(peakPercent('weekly'))}%`];
-
-  if (settings.daemonUrl && settings.daemonToken) {
-    const since = formatCcusageDate(new Date(now - DIGEST_INTERVAL_MS));
-    const daily = await getDaemonDaily(settings, { since });
-    if (daily.ok) {
-      lines.push(`CLI: ${formatTokens(daily.data.totals.totalTokens)} tokens, $${daily.data.totals.totalCost.toFixed(2)}`);
-    }
-  }
-
-  if (isWithinQuietHours(new Date(now), settings)) return;
-
-  await db.meta.put({ key: 'lastWeeklyDigestAt', value: new Date(now).toISOString() });
-  await sendNotification('Your weekly Claude usage', lines.join('\n'));
-  log('weekly digest sent', lines);
-}
-
-const ANOMALY_MIN_COST_FLOOR = 2;
-
-/**
- * Notifies once per session whose cost is far outside the norm for the account's recent
- * sessions — usually a stuck/looping agent rather than unusually valuable work. Shares the same
- * `findAnomalousSessions` heuristic the "Priciest sessions" table uses to mark rows, so the
- * notification and the UI never disagree about what counts as anomalous. Dedup is permanent per
- * `sessionId` (not per-month like the budget alerts) — a session's cost only grows while it's
- * active, so once flagged it stays flagged, no need to ever re-alert on it.
- */
-async function checkSessionAnomalies(sessions: DaemonSession[], settings: Settings): Promise<void> {
-  for (const session of findAnomalousSessions(sessions, { minFloor: ANOMALY_MIN_COST_FLOOR })) {
-    const fired = await notifyOnce(`anomalyAlerted:${session.sessionId}`, settings, {
-      title: 'Claude usage: unusually high session cost',
-      message: `${session.projectPath}: $${session.totalCost.toFixed(2)} in one session — see Top Usage for details.`,
-    });
-    if (fired) log('session anomaly alert fired', session.sessionId, session.totalCost);
-  }
-}
-
-/**
  * A single small "is anything worth my attention?" count on the toolbar icon, aggregating
  * signals that would otherwise only surface if the user happened to open the right dashboard
- * tab: sessions nearing Claude Code's 30-day log cleanup, and any CLI budget (global or
- * per-project) currently exceeded this month. Deliberately excludes Guardrails config drift —
+ * tab: sessions nearing Claude Code's 30-day log cleanup. Deliberately excludes Guardrails config drift —
  * checking that for every known project on every 5-minute poll would mean a `/config` fetch per
- * project, too much daemon load for a background badge. Fetches `/sessions` once and reuses it
- * for both the retention count and the anomaly check above, rather than fetching twice.
+ * project, too much daemon load for a background badge.
  */
 async function checkSessionsAndBadge(): Promise<void> {
   const settings = await getSettings();
@@ -529,18 +378,7 @@ async function checkSessionsAndBadge(): Promise<void> {
   const sessionsResult = await getDaemonSessions(settings);
   const sessions = sessionsResult.ok ? sessionsResult.data.sessions : [];
 
-  await checkSessionAnomalies(sessions, settings);
-
-  const retentionCount = findRetentionWarnings(sessions).length;
-  const monthKey = currentMonthKey();
-  const globalBudgetExceeded = settings.cliMonthlyBudget !== null && Boolean(await db.meta.get(`cliBudgetAlerted:${monthKey}`));
-  let perProjectBudgetsExceeded = 0;
-  for (const entry of settings.perProjectCliBudgets) {
-    const slug = entry.projectDir.replace(/\//g, '-');
-    if (await db.meta.get(`cliBudgetAlerted:${slug}:${monthKey}`)) perProjectBudgetsExceeded++;
-  }
-
-  const count = retentionCount + (globalBudgetExceeded ? 1 : 0) + perProjectBudgetsExceeded;
+  const count = findRetentionWarnings(sessions).length;
   await setBadgeText(count > 0 ? String(count) : '');
   if (count > 0) await setBadgeBackgroundColor('#d64545');
 }

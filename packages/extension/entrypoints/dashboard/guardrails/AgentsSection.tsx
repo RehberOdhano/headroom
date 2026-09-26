@@ -16,10 +16,7 @@ function presetOrCustom(model: string | null): string {
  * (`packages/daemon/src/adapters/claude-config.ts`'s `readAgentDefinitions`/`writeAgentModel`).
  * Only project-scope agents are editable — global ones (`scope: 'global'`) are shown read-only,
  * the same restraint already applied to permission overrides (this daemon never writes to
- * config outside the one project it's been told about). Deliberately doesn't show per-agent
- * cost here — that lives in CLI Attribution's "Skills, commands & subagents" table, which
- * aggregates usage across *every* project rather than just this one, so merging the two would
- * mean reconciling two different scopes; a pointer is enough.
+ * config outside the one project it's been told about).
  */
 export function AgentsSection({
   agents,
@@ -136,10 +133,6 @@ export function AgentsSection({
           )}
         </>
       )}
-      <p className="hint" style={{ marginTop: 'var(--space-3)' }}>
-        See CLI Attribution → "Skills, commands &amp; subagents" for how much each subagent type
-        has actually cost you, across every project.
-      </p>
     </section>
   );
 }

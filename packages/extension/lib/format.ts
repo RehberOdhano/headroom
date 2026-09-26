@@ -7,10 +7,25 @@ export interface ForecastMessage {
   atRisk: boolean;
 }
 
+/** Below this much usage a linear projection is extrapolating from almost nothing (3% used
+ *  "reaching the limit in 141h" is noise, not a warning), so no forecast is shown at all. */
+export const MIN_FORECAST_PERCENT = 10;
+
+/** A projection that only beats the reset by a few minutes isn't worth interrupting anyone for —
+ *  the linear fit isn't accurate to that resolution. The popup headline and the pace
+ *  notification require at least this much room; the dashboard's detailed forecast line doesn't. */
+export const MIN_FORECAST_MARGIN_MS = 30 * 60_000;
+
 /** Turns a raw burn-rate forecast into UI copy, or null if there's nothing worth showing (no
- *  forecast, or the bar isn't currently on pace to hit 100% at all). */
-export function describeForecast(forecast: BurnRateForecast | null, resetsAt: string | null): ForecastMessage | null {
+ *  forecast, the bar isn't on pace to hit 100%, or — when `currentPercent` is given — it has
+ *  barely been used yet). */
+export function describeForecast(
+  forecast: BurnRateForecast | null,
+  resetsAt: string | null,
+  currentPercent?: number,
+): ForecastMessage | null {
   if (!forecast || !forecast.projectedFullAt) return null;
+  if (currentPercent !== undefined && currentPercent < MIN_FORECAST_PERCENT) return null;
 
   const projected = new Date(forecast.projectedFullAt);
   const atRisk = !resetsAt || projected < new Date(resetsAt);
@@ -100,8 +115,7 @@ export function formatPercent(percent: number): string {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
-/** "1.2K" / "3.4M" / "42" — shared by the CLI attribution dashboard and the background worker's
- *  notification text (weekly digest), so both read consistently. */
+/** "1.2K" / "3.4M" / "42". */
 export function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
