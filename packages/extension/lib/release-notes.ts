@@ -1,6 +1,9 @@
 /** What's-new copy shown once after an update. Add an entry per release worth announcing;
  *  versions without one show nothing. */
 export const RELEASE_NOTES: Record<string, string[]> = {
+  '0.2.1': [
+    'The empty popup now links straight to claude.ai’s Settings → Usage instead of just describing it.',
+  ],
   '0.2.0': [
     'The popup now flags, in one line, when you are on pace to run out before a limit resets (and stays quiet otherwise).',
     'The dashboard shows CLI tabs only once the daemon is connected, with a copy-paste install command until then.',
