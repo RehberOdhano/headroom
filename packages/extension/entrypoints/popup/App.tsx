@@ -34,7 +34,23 @@ const styles = {
   headline: { fontSize: '0.85rem', fontWeight: 600, lineHeight: 1.35, margin: '0 0 0.75rem', padding: '0.5rem 0.6rem', borderRadius: 6 } as const,
   extraCredits: { marginTop: 4, marginBottom: 12 },
   extraCreditsAmount: { fontSize: '0.75rem', color: '#6b7280', margin: '2px 0 0' },
+  emptyButton: {
+    display: 'inline-block',
+    marginTop: 10,
+    padding: '0.4rem 0.75rem',
+    background: '#3b82f6',
+    color: '#fff',
+    borderRadius: 6,
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    textDecoration: 'none',
+  } as const,
+  ratingPrompt: { fontSize: '0.75rem', color: '#4b5563', margin: '0 0 0.75rem' },
 } as const;
+
+const USAGE_SETTINGS_URL = 'https://claude.ai/settings/usage';
+const STORE_URL = 'https://chromewebstore.google.com/detail/chjbjdabpficejgogljohhlobfaehepl';
+const RATING_PROMPT_KEY = 'ratingPromptShown';
 
 function ExtraCreditsRow({ info }: { info: ExtraCreditsInfo }) {
   return (
@@ -109,6 +125,7 @@ export default function App() {
     [],
   );
   const [refreshing, setRefreshing] = useState(false);
+  const [showRating, setShowRating] = useState(false);
   const sessionHistory = barHistory(recentSnapshots ?? [], 'session');
   const weeklyHistory = barHistory(recentSnapshots ?? [], 'weekly');
   const headline = latest
@@ -124,6 +141,18 @@ export default function App() {
   useEffect(() => {
     void refresh();
   }, []);
+
+  // Ask for a rating right after the forecast has just proven itself useful — the first time it
+  // warns of a limit before it's hit — rather than at a random moment. One-time: once fired, it's
+  // marked seen immediately so it never appears again, whether or not the user clicks through.
+  useEffect(() => {
+    if (headline?.tone !== 'warn') return;
+    void (async () => {
+      if (await db.meta.get(RATING_PROMPT_KEY)) return;
+      await db.meta.put({ key: RATING_PROMPT_KEY, value: 'true' });
+      setShowRating(true);
+    })();
+  }, [headline?.tone]);
 
   async function refresh() {
     setRefreshing(true);
@@ -146,6 +175,15 @@ export default function App() {
         <>
           {/* Only when something needs attention — "all clear" just repeats what the bars show. */}
           {headline && headline.tone !== 'ok' && <HeadlineBanner headline={headline} />}
+          {showRating && (
+            <p style={styles.ratingPrompt}>
+              Glad this caught it early —{' '}
+              <a href={STORE_URL} target="_blank" rel="noreferrer">
+                rate headroom on the Chrome Web Store
+              </a>
+              ?
+            </p>
+          )}
           {latest.session && <Bar title="Session (5h)" bar={latest.session} />}
           {latest.weekly && <Bar title="Weekly" bar={latest.weekly} />}
           {!latest.session && !latest.weekly && (
@@ -165,13 +203,20 @@ export default function App() {
           </a>
         </>
       ) : (
-        <p style={styles.empty}>
-          No usage data yet. Open claude.ai's Settings → Usage page once (or send a message) so the
-          extension can find your account, then reopen this popup — it polls automatically after that.{' '}
-          <a href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
-            Setup checklist
+        <div>
+          <p style={styles.empty}>
+            No usage data yet. Open claude.ai → Settings → Usage once to start tracking — the extension
+            can't find your account until then.
+          </p>
+          <a style={styles.emptyButton} href={USAGE_SETTINGS_URL} target="_blank" rel="noreferrer">
+            Open Settings → Usage
           </a>
-        </p>
+          <p style={styles.updated}>
+            <a href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
+              Setup checklist
+            </a>
+          </p>
+        </div>
       )}
     </main>
   );

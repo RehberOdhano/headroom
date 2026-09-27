@@ -28,9 +28,11 @@ describe('popup App', () => {
     cleanup();
   });
 
-  it('shows the empty state with no capture yet', async () => {
+  it('shows the empty state with no capture yet, and a button to open Settings → Usage', async () => {
     render(<App />);
     expect(await screen.findByText(/No usage data yet/)).toBeTruthy();
+    const button = await screen.findByRole('link', { name: /Open Settings → Usage/ });
+    expect(button.getAttribute('href')).toBe('https://claude.ai/settings/usage');
   });
 
   it('renders bars and an extra-credits row without throwing', async () => {
@@ -102,5 +104,29 @@ describe('popup App', () => {
     });
     render(<App />);
     expect(await screen.findByText(/Session limit reached/)).toBeTruthy();
+  });
+
+  it('shows a one-time rating prompt the first time the forecast warns, and not again after remount', async () => {
+    const now = Date.now();
+    const HOUR = 3_600_000;
+    // Same shape as headline.test.ts's "steep" fixture: 10%/hour for 5 points, projects full
+    // ~5h out while the reset is 8h away — a real 'warn' headline, not a limit-reached 'alert'.
+    const resetsAt = new Date(now + 8 * HOUR).toISOString();
+    const steepSnapshots: LimitSnapshotRecord[] = [4, 3, 2, 1, 0].map((hoursAgo, i) => ({
+      capturedAt: new Date(now - hoursAgo * HOUR).toISOString(),
+      source: 'usage',
+      session: { percent: 10 + i * 10, resetsAt, severity: 'normal', isActive: true },
+      weekly: null,
+    }));
+    await db.limitSnapshots.bulkAdd(steepSnapshots);
+
+    const { unmount } = render(<App />);
+    expect(await screen.findByText(/runs out/)).toBeTruthy();
+    expect(await screen.findByText(/rate headroom on the Chrome Web Store/)).toBeTruthy();
+    unmount();
+
+    render(<App />);
+    expect(await screen.findByText(/runs out/)).toBeTruthy();
+    expect(screen.queryByText(/rate headroom on the Chrome Web Store/)).toBeNull();
   });
 });
