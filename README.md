@@ -1,9 +1,9 @@
 # headroom — Claude Usage Companion
 
+<img src="docs/readme-cover.png" alt="headroom — Claude Usage Companion: see your session and weekly limits coming, with a forecast, not just a percentage" width="100%" />
+
 [**Install from the Chrome Web Store →**](https://chromewebstore.google.com/detail/chjbjdabpficejgogljohhlobfaehepl)
 (Edge can install the same listing directly; Firefox builds from source — see Installation below)
-
-<img src="docs/readme-popup.png" alt="headroom's popup: session and weekly usage bars, with a forecast warning that a limit will be hit before it resets" width="360" />
 
 A cross-browser extension (Chrome, Edge, Firefox) with an optional local daemon that gives you
 one place to see Claude usage across claude.ai and the Claude Code CLI: session and weekly
@@ -34,6 +34,25 @@ headroom is built differently, and adds what's missing elsewhere:
 **Out of scope, by design:** the Claude desktop app's per-conversation detail (not visible to a
 browser; its usage is still reflected in your shared session/weekly totals) and API console /
 pay-as-you-go usage.
+
+## See it in action
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img src="docs/screenshot-popup.png" width="260" alt="Popup showing session and weekly usage bars, with a forecast warning that a limit will be hit before it resets" /><br />
+      <sub>Popup — at-a-glance bars and a burn-rate warning</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/screenshot-usage-forecast.png" width="260" alt="Dashboard Usage & Forecast tab, showing multi-week history charts for session and weekly limits" /><br />
+      <sub>Usage & Forecast — multi-week history, 24h/7d/30d</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/screenshot-cli-attribution.png" width="260" alt="Dashboard CLI Attribution tab, showing token totals by project, model, and individual session, each filterable by typing" /><br />
+      <sub>CLI Attribution — by project, model, and session</sub>
+    </td>
+  </tr>
+</table>
 
 ## Installation
 
