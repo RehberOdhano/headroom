@@ -13,6 +13,7 @@ import {
 import { barHistory } from '../../../lib/history.js';
 import { formatCcusageDate, formatLastActivity, formatTokens } from '../../../lib/format.js';
 import { downloadCsv } from '../../../lib/downloads.js';
+import { matchesQuery } from '../../../lib/guardrails.js';
 import type { Settings } from '../../../lib/protocol.js';
 import { WeeklyCliSplitChart } from './WeeklyCliSplitChart.tsx';
 
@@ -73,6 +74,9 @@ export function CliOverview({ settings }: { settings: Settings }) {
   const [byProject, setByProject] = useState<DaemonResult<{ projects: Record<string, { totalTokens: number }[]> }> | null>(null);
   const [byModel, setByModel] = useState<DaemonResult<{ models: { modelName: string; inputTokens: number; outputTokens: number }[] }> | null>(null);
   const [sessions, setSessions] = useState<DaemonResult<DaemonSessionsReport> | null>(null);
+  const [projectFilter, setProjectFilter] = useState('');
+  const [modelFilter, setModelFilter] = useState('');
+  const [sessionFilter, setSessionFilter] = useState('');
 
   useEffect(() => {
     const since = formatCcusageDate(new Date(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000));
@@ -109,6 +113,12 @@ export function CliOverview({ settings }: { settings: Settings }) {
     ? [...byModel.data.models].sort((a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens))
     : [];
   const sessionRows = sessions?.ok ? [...sessions.data.sessions].sort((a, b) => b.totalTokens - a.totalTokens) : [];
+
+  // Filtered down for both display and CSV export — a long table (many projects/models, or a
+  // heavy CLI user's many sessions) is otherwise nothing but scrolling to find one entry.
+  const filteredProjectRows = projectRows.filter((row) => matchesQuery(projectFilter, row.project));
+  const filteredModelRows = modelRows.filter((model) => matchesQuery(modelFilter, model.modelName));
+  const filteredSessionRows = sessionRows.filter((session) => matchesQuery(sessionFilter, session.projectPath, session.sessionId));
 
   return (
     <>
@@ -160,7 +170,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
                 downloadCsv(
                   'headroom-by-project.csv',
                   ['Project', 'Tokens', '% of week (est.)'],
-                  projectRows.map(({ project, tokens }) => {
+                  filteredProjectRows.map(({ project, tokens }) => {
                     const weekPercent = reconciliation ? tokens / reconciliation.tokensPerPercent : null;
                     return [project, tokens, weekPercent === null ? '' : weekPercent.toFixed(1)];
                   }),
@@ -170,29 +180,39 @@ export function CliOverview({ settings }: { settings: Settings }) {
               Download CSV
             </button>
           </div>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Tokens</th>
-                  {reconciliation && <th>% of week (est.)</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {projectRows.map(({ project, tokens }) => {
-                  const weekPercent = reconciliation ? tokens / reconciliation.tokensPerPercent : null;
-                  return (
-                    <tr key={project}>
-                      <td>{project}</td>
-                      <td>{formatTokens(tokens)}</td>
-                      {reconciliation && <td>{weekPercent === null ? '—' : `~${formatPercentShare(weekPercent)}%`}</td>}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <input
+            className="search-input filter-input"
+            value={projectFilter}
+            onChange={(event) => setProjectFilter(event.target.value)}
+            placeholder="Filter projects…"
+          />
+          {filteredProjectRows.length === 0 ? (
+            <p className="hint">No projects match "{projectFilter}".</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Tokens</th>
+                    {reconciliation && <th>% of week (est.)</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredProjectRows.map(({ project, tokens }) => {
+                    const weekPercent = reconciliation ? tokens / reconciliation.tokensPerPercent : null;
+                    return (
+                      <tr key={project}>
+                        <td>{project}</td>
+                        <td>{formatTokens(tokens)}</td>
+                        {reconciliation && <td>{weekPercent === null ? '—' : `~${formatPercentShare(weekPercent)}%`}</td>}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 
@@ -207,7 +227,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
                 downloadCsv(
                   'headroom-by-model.csv',
                   ['Model', 'Input', 'Output', '% of tokens'],
-                  modelRows.map((model) => [
+                  filteredModelRows.map((model) => [
                     model.modelName,
                     model.inputTokens,
                     model.outputTokens,
@@ -219,28 +239,38 @@ export function CliOverview({ settings }: { settings: Settings }) {
               Download CSV
             </button>
           </div>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Model</th>
-                  <th>Input</th>
-                  <th>Output</th>
-                  <th>% of tokens</th>
-                </tr>
-              </thead>
-              <tbody>
-                {modelRows.map((model) => (
-                  <tr key={model.modelName}>
-                    <td>{model.modelName}</td>
-                    <td>{formatTokens(model.inputTokens)}</td>
-                    <td>{formatTokens(model.outputTokens)}</td>
-                    <td>{formatPercentShare(modelTokenShare(model, modelRows))}%</td>
+          <input
+            className="search-input filter-input"
+            value={modelFilter}
+            onChange={(event) => setModelFilter(event.target.value)}
+            placeholder="Filter models…"
+          />
+          {filteredModelRows.length === 0 ? (
+            <p className="hint">No models match "{modelFilter}".</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>Input</th>
+                    <th>Output</th>
+                    <th>% of tokens</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filteredModelRows.map((model) => (
+                    <tr key={model.modelName}>
+                      <td>{model.modelName}</td>
+                      <td>{formatTokens(model.inputTokens)}</td>
+                      <td>{formatTokens(model.outputTokens)}</td>
+                      <td>{formatPercentShare(modelTokenShare(model, modelRows))}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 
@@ -255,33 +285,43 @@ export function CliOverview({ settings }: { settings: Settings }) {
                 downloadCsv(
                   'headroom-by-session.csv',
                   ['Project', 'Last active', 'Tokens'],
-                  sessionRows.map((session) => [session.projectPath, session.lastActivity, session.totalTokens]),
+                  filteredSessionRows.map((session) => [session.projectPath, session.lastActivity, session.totalTokens]),
                 )
               }
             >
               Download CSV
             </button>
           </div>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Last active</th>
-                  <th>Tokens</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sessionRows.map((session) => (
-                  <tr key={session.sessionId}>
-                    <td>{session.projectPath}</td>
-                    <td>{formatLastActivity(session.lastActivity)}</td>
-                    <td>{formatTokens(session.totalTokens)}</td>
+          <input
+            className="search-input filter-input"
+            value={sessionFilter}
+            onChange={(event) => setSessionFilter(event.target.value)}
+            placeholder="Filter sessions by project…"
+          />
+          {filteredSessionRows.length === 0 ? (
+            <p className="hint">No sessions match "{sessionFilter}".</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Last active</th>
+                    <th>Tokens</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filteredSessionRows.map((session) => (
+                    <tr key={session.sessionId}>
+                      <td>{session.projectPath}</td>
+                      <td>{formatLastActivity(session.lastActivity)}</td>
+                      <td>{formatTokens(session.totalTokens)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 

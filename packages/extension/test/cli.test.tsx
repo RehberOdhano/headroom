@@ -195,6 +195,39 @@ describe('CliTab / SearchTab', () => {
       expect(screen.getAllByText('/proj-a').length).toBeGreaterThan(0);
     });
 
+    it('filters the By-project table by typing, without touching the By-model table', async () => {
+      const totals = zeroTotals;
+      const dailyEntryA = { date: '2026-08-01', totalTokens: 500, totalCost: 0.5, inputTokens: 300, outputTokens: 200, cacheCreationTokens: 0, cacheReadTokens: 0, modelBreakdowns: [], modelsUsed: [] };
+      const dailyEntryB = { date: '2026-08-01', totalTokens: 700, totalCost: 0.7, inputTokens: 400, outputTokens: 300, cacheCreationTokens: 0, cacheReadTokens: 0, modelBreakdowns: [], modelsUsed: [] };
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals });
+        if (requested.includes('/aggregate?by=project')) {
+          return jsonResponse({ projects: { '/proj-alpha': [dailyEntryA], '/proj-beta': [dailyEntryB] }, totals });
+        }
+        if (requested.includes('/aggregate?by=model')) {
+          return jsonResponse({
+            models: [{ modelName: 'claude-sonnet-5', inputTokens: 1, outputTokens: 1, cost: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }],
+          });
+        }
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [], totals });
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+      await screen.findByText('/proj-alpha');
+      expect(screen.getByText('/proj-beta')).toBeTruthy();
+
+      fireEvent.change(screen.getByPlaceholderText('Filter projects…'), { target: { value: 'alpha' } });
+      expect(screen.getByText('/proj-alpha')).toBeTruthy();
+      expect(screen.queryByText('/proj-beta')).toBeNull();
+      // The other table's own row is untouched by the project filter.
+      expect(screen.getByText('claude-sonnet-5')).toBeTruthy();
+
+      fireEvent.change(screen.getByPlaceholderText('Filter projects…'), { target: { value: 'no-such-project' } });
+      expect(await screen.findByText('No projects match "no-such-project".')).toBeTruthy();
+    });
+
     it('shows a week-over-week delta computed from the same 30-day daily fetch, no new call', async () => {
       // Dates relative to the real wall clock at test-run time, not a hardcoded date — avoids
       // depending on (or needing to fake) the system clock, since weekOverWeek() buckets off
