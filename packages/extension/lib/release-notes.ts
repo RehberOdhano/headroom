@@ -1,6 +1,12 @@
 /** What's-new copy shown once after an update. Add an entry per release worth announcing;
  *  versions without one show nothing. */
 export const RELEASE_NOTES: Record<string, string[]> = {
+  '0.2.2': [
+    'CLI Attribution now breaks usage down by individual session, not just by project and model.',
+    'The By-project and By-session tables are filterable by typing, for accounts with a long list.',
+    'Session exports can optionally include a short summary of each tool call and its result.',
+    'The popup now tells apart "haven’t visited claude.ai yet" from "detected, just waiting on the first snapshot" instead of repeating the same instruction either way.',
+  ],
   '0.2.1': [
     'The empty popup now links straight to claude.ai’s Settings → Usage instead of just describing it.',
   ],

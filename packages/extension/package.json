@@ -3,7 +3,7 @@
   "description": "Claude usage companion: limit bars, history, forecasting, and CLI attribution for claude.ai and Claude Code.",
   "private": true,
   "license": "MIT",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "scripts": {
     "dev": "wxt",

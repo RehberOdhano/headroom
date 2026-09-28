@@ -1,5 +1,10 @@
 # headroom — Claude Usage Companion
 
+[**Install from the Chrome Web Store →**](https://chromewebstore.google.com/detail/chjbjdabpficejgogljohhlobfaehepl)
+(Edge can install the same listing directly; Firefox builds from source — see Installation below)
+
+<img src="docs/readme-popup.png" alt="headroom's popup: session and weekly usage bars, with a forecast warning that a limit will be hit before it resets" width="360" />
+
 A cross-browser extension (Chrome, Edge, Firefox) with an optional local daemon that gives you
 one place to see Claude usage across claude.ai and the Claude Code CLI: session and weekly
 limit bars, burn-rate forecasts, multi-week history, CLI attribution, cross-project session
