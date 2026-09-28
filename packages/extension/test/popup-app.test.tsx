@@ -35,6 +35,29 @@ describe('popup App', () => {
     expect(button.getAttribute('href')).toBe('https://claude.ai/settings/usage');
   });
 
+  it('tells a detected-but-no-snapshot-yet user to wait, instead of repeating the same instruction', async () => {
+    // orgId is set the moment any capture arrives, before a snapshot necessarily lands in
+    // limitSnapshots — see background.ts's 'captured' handler. A user in this gap already did
+    // the right thing; telling them to do it again reads as the extension being stuck.
+    await db.meta.put({ key: 'orgId', value: 'org-123' });
+    render(<App />);
+    expect(await screen.findByText(/Account detected/)).toBeTruthy();
+    expect(screen.queryByText(/No usage data yet/)).toBeNull();
+    expect(screen.queryByRole('link', { name: /Open Settings → Usage/ })).toBeNull();
+  });
+
+  it('tells a detected user their usage data failed to parse, instead of the generic "hasn\'t landed yet" message', async () => {
+    // background.ts records this breadcrumb when a real /usage response fails schema
+    // validation (e.g. a shape claude.ai only sends for an account with genuinely zero usage) —
+    // without it, this case is indistinguishable from a plain "hasn't captured yet" delay, which
+    // is exactly what made a real, permanently-stuck failure read as "just needs a moment".
+    await db.meta.put({ key: 'orgId', value: 'org-123' });
+    await db.meta.put({ key: 'usageParseError', value: JSON.stringify({ capturedAt: '2026-08-26T17:20:00Z' }) });
+    render(<App />);
+    expect(await screen.findByText(/couldn't be read/)).toBeTruthy();
+    expect(screen.queryByText(/hasn't landed yet/)).toBeNull();
+  });
+
   it('renders bars and an extra-credits row without throwing', async () => {
     const snapshot: LimitSnapshotRecord = {
       capturedAt: new Date().toISOString(),

@@ -104,7 +104,7 @@ describe('searchSessions', () => {
 });
 
 describe('exportSessionMarkdown', () => {
-  it('renders user/assistant turns as markdown, skipping tool_use blocks', async () => {
+  it('renders user/assistant turns as markdown, skipping tool_use/tool_result blocks by default', async () => {
     await withFixtureClaudeDir(async (dir) => {
       const markdown = exportSessionMarkdown(dir, '11111111-1111-4111-8111-111111111111');
       expect(markdown).toContain('## User');
@@ -112,6 +112,27 @@ describe('exportSessionMarkdown', () => {
       expect(markdown).toContain('## Assistant');
       expect(markdown).toContain('sure, refactoring the aggregate pipeline now');
       expect(markdown).not.toContain('tool_use');
+      expect(markdown).not.toContain('Read 42 lines');
+    }, 'session-log-dir');
+  });
+
+  it('includes one-line tool call/result summaries when includeToolCalls is true', async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      const markdown = exportSessionMarkdown(dir, '11111111-1111-4111-8111-111111111111', { includeToolCalls: true });
+      expect(markdown).toContain('🔧 **Read**');
+      expect(markdown).toContain('file_path');
+      expect(markdown).toContain('/fixtures/project-alpha/src/aggregate.ts');
+      expect(markdown).toContain('↩ Read 42 lines from aggregate.ts');
+      // Still readable, not a raw dump — each summary is its own short line.
+      expect(markdown.split('\n').every((line) => line.length < 300)).toBe(true);
+    }, 'session-log-dir');
+  });
+
+  it('marks an errored tool_result distinctly from a normal one', async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      const markdown = exportSessionMarkdown(dir, '11111111-1111-4111-8111-111111111111', { includeToolCalls: true });
+      expect(markdown).toContain('⚠️ file not found: /tmp/x');
+      expect(markdown).toContain('↩ Read 42 lines from aggregate.ts');
     }, 'session-log-dir');
   });
 

@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import type { DaemonSessionsReport } from '@headroom/shared';
 import { estimateTokensPerPercent, estimateWeeklyCliSplit } from '@headroom/shared';
 import { db } from '../../../lib/db.js';
-import { getDaemonByModel, getDaemonByProject, getDaemonDaily, type DaemonResult } from '../../../lib/daemon-client.js';
+import {
+  getDaemonByModel,
+  getDaemonByProject,
+  getDaemonDaily,
+  getDaemonSessions,
+  type DaemonResult,
+} from '../../../lib/daemon-client.js';
 import { barHistory } from '../../../lib/history.js';
-import { formatCcusageDate, formatTokens } from '../../../lib/format.js';
+import { formatCcusageDate, formatLastActivity, formatTokens } from '../../../lib/format.js';
 import { downloadCsv } from '../../../lib/downloads.js';
+import { matchesQuery } from '../../../lib/guardrails.js';
 import type { Settings } from '../../../lib/protocol.js';
 import { WeeklyCliSplitChart } from './WeeklyCliSplitChart.tsx';
 
@@ -65,12 +73,16 @@ export function CliOverview({ settings }: { settings: Settings }) {
   const [daily, setDaily] = useState<DaemonResult<{ daily: { date: string; totalTokens: number }[]; totals: { totalTokens: number } }> | null>(null);
   const [byProject, setByProject] = useState<DaemonResult<{ projects: Record<string, { totalTokens: number }[]> }> | null>(null);
   const [byModel, setByModel] = useState<DaemonResult<{ models: { modelName: string; inputTokens: number; outputTokens: number }[] }> | null>(null);
+  const [sessions, setSessions] = useState<DaemonResult<DaemonSessionsReport> | null>(null);
+  const [projectFilter, setProjectFilter] = useState('');
+  const [sessionFilter, setSessionFilter] = useState('');
 
   useEffect(() => {
     const since = formatCcusageDate(new Date(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000));
     void getDaemonDaily(settings, { since }).then(setDaily);
     void getDaemonByProject(settings, { since }).then(setByProject);
     void getDaemonByModel(settings, { since }).then(setByModel);
+    void getDaemonSessions(settings, { since }).then(setSessions);
   }, [settings.daemonUrl, settings.daemonToken]);
 
   const allSnapshots = useLiveQuery(() => db.limitSnapshots.orderBy('capturedAt').toArray(), []) ?? [];
@@ -99,6 +111,13 @@ export function CliOverview({ settings }: { settings: Settings }) {
   const modelRows = byModel?.ok
     ? [...byModel.data.models].sort((a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens))
     : [];
+  const sessionRows = sessions?.ok ? [...sessions.data.sessions].sort((a, b) => b.totalTokens - a.totalTokens) : [];
+
+  // Filtered down for both display and CSV export — a long table (many projects, or a heavy CLI
+  // user's many sessions) is otherwise nothing but scrolling to find one entry. Models aren't
+  // filtered: an account realistically only ever has a handful in play, never enough to need it.
+  const filteredProjectRows = projectRows.filter((row) => matchesQuery(projectFilter, row.project));
+  const filteredSessionRows = sessionRows.filter((session) => matchesQuery(sessionFilter, session.projectPath, session.sessionId));
 
   return (
     <>
@@ -150,7 +169,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
                 downloadCsv(
                   'headroom-by-project.csv',
                   ['Project', 'Tokens', '% of week (est.)'],
-                  projectRows.map(({ project, tokens }) => {
+                  filteredProjectRows.map(({ project, tokens }) => {
                     const weekPercent = reconciliation ? tokens / reconciliation.tokensPerPercent : null;
                     return [project, tokens, weekPercent === null ? '' : weekPercent.toFixed(1)];
                   }),
@@ -160,29 +179,39 @@ export function CliOverview({ settings }: { settings: Settings }) {
               Download CSV
             </button>
           </div>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Tokens</th>
-                  {reconciliation && <th>% of week (est.)</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {projectRows.map(({ project, tokens }) => {
-                  const weekPercent = reconciliation ? tokens / reconciliation.tokensPerPercent : null;
-                  return (
-                    <tr key={project}>
-                      <td>{project}</td>
-                      <td>{formatTokens(tokens)}</td>
-                      {reconciliation && <td>{weekPercent === null ? '—' : `~${formatPercentShare(weekPercent)}%`}</td>}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <input
+            className="search-input filter-input"
+            value={projectFilter}
+            onChange={(event) => setProjectFilter(event.target.value)}
+            placeholder="Filter projects…"
+          />
+          {filteredProjectRows.length === 0 ? (
+            <p className="hint">No projects match "{projectFilter}".</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Tokens</th>
+                    {reconciliation && <th>% of week (est.)</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredProjectRows.map(({ project, tokens }) => {
+                    const weekPercent = reconciliation ? tokens / reconciliation.tokensPerPercent : null;
+                    return (
+                      <tr key={project}>
+                        <td>{project}</td>
+                        <td>{formatTokens(tokens)}</td>
+                        {reconciliation && <td>{weekPercent === null ? '—' : `~${formatPercentShare(weekPercent)}%`}</td>}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 
@@ -234,9 +263,63 @@ export function CliOverview({ settings }: { settings: Settings }) {
         </>
       )}
 
-      {projectRows.length === 0 && modelRows.length === 0 && (!daily?.ok || daily.data.totals.totalTokens === 0) && (
-        <p className="hint">No CLI usage recorded yet in the last {RECENT_DAYS} days.</p>
+      {sessionRows.length > 0 && (
+        <>
+          <div className="card-header">
+            <p className="table-title">By session</p>
+            <button
+              type="button"
+              className="btn"
+              onClick={() =>
+                downloadCsv(
+                  'headroom-by-session.csv',
+                  ['Project', 'Last active', 'Tokens'],
+                  filteredSessionRows.map((session) => [session.projectPath, session.lastActivity, session.totalTokens]),
+                )
+              }
+            >
+              Download CSV
+            </button>
+          </div>
+          <input
+            className="search-input filter-input"
+            value={sessionFilter}
+            onChange={(event) => setSessionFilter(event.target.value)}
+            placeholder="Filter sessions by project…"
+          />
+          {filteredSessionRows.length === 0 ? (
+            <p className="hint">No sessions match "{sessionFilter}".</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Last active</th>
+                    <th>Tokens</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSessionRows.map((session) => (
+                    <tr key={session.sessionId}>
+                      <td>{session.projectPath}</td>
+                      <td>{formatLastActivity(session.lastActivity)}</td>
+                      <td>{formatTokens(session.totalTokens)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
+
+      {projectRows.length === 0 &&
+        modelRows.length === 0 &&
+        sessionRows.length === 0 &&
+        (!daily?.ok || daily.data.totals.totalTokens === 0) && (
+          <p className="hint">No CLI usage recorded yet in the last {RECENT_DAYS} days.</p>
+        )}
     </>
   );
 }

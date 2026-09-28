@@ -188,8 +188,44 @@ describe('CliTab / SearchTab', () => {
       expect(screen.queryByText('Cost')).toBeNull();
       expect(screen.queryByText(/equivalent API cost/)).toBeNull();
       expect(screen.queryByText(/\$\d/)).toBeNull();
-      // CSV export buttons added alongside the By-project/By-model tables.
-      expect(screen.getAllByText('Download CSV').length).toBe(2);
+      // CSV export buttons added alongside the By-project/By-model/By-session tables.
+      expect(screen.getAllByText('Download CSV').length).toBe(3);
+      // By-session table renders the same per-session data RetentionWarnings uses.
+      expect(screen.getByText('By session')).toBeTruthy();
+      expect(screen.getAllByText('/proj-a').length).toBeGreaterThan(0);
+    });
+
+    it('filters the By-project table by typing, without touching the By-model table', async () => {
+      const totals = zeroTotals;
+      const dailyEntryA = { date: '2026-08-01', totalTokens: 500, totalCost: 0.5, inputTokens: 300, outputTokens: 200, cacheCreationTokens: 0, cacheReadTokens: 0, modelBreakdowns: [], modelsUsed: [] };
+      const dailyEntryB = { date: '2026-08-01', totalTokens: 700, totalCost: 0.7, inputTokens: 400, outputTokens: 300, cacheCreationTokens: 0, cacheReadTokens: 0, modelBreakdowns: [], modelsUsed: [] };
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals });
+        if (requested.includes('/aggregate?by=project')) {
+          return jsonResponse({ projects: { '/proj-alpha': [dailyEntryA], '/proj-beta': [dailyEntryB] }, totals });
+        }
+        if (requested.includes('/aggregate?by=model')) {
+          return jsonResponse({
+            models: [{ modelName: 'claude-sonnet-5', inputTokens: 1, outputTokens: 1, cost: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }],
+          });
+        }
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [], totals });
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+      await screen.findByText('/proj-alpha');
+      expect(screen.getByText('/proj-beta')).toBeTruthy();
+
+      fireEvent.change(screen.getByPlaceholderText('Filter projects…'), { target: { value: 'alpha' } });
+      expect(screen.getByText('/proj-alpha')).toBeTruthy();
+      expect(screen.queryByText('/proj-beta')).toBeNull();
+      // The other table's own row is untouched by the project filter.
+      expect(screen.getByText('claude-sonnet-5')).toBeTruthy();
+
+      fireEvent.change(screen.getByPlaceholderText('Filter projects…'), { target: { value: 'no-such-project' } });
+      expect(await screen.findByText('No projects match "no-such-project".')).toBeTruthy();
     });
 
     it('shows a week-over-week delta computed from the same 30-day daily fetch, no new call', async () => {
@@ -298,7 +334,43 @@ describe('CliTab / SearchTab', () => {
 
       // Time-sensitive, so it renders above the attribution panel rather than inside it.
       expect(await screen.findByText('Sessions nearing cleanup')).toBeTruthy();
-      expect(await screen.findByText('No CLI usage recorded yet in the last 30 days.')).toBeTruthy();
+      // The same session also shows up in the attribution panel's own By-session table below —
+      // "no usage" would be wrong here, since this session's tokens are real CLI usage.
+      expect(await screen.findByText('By session')).toBeTruthy();
+      expect(screen.queryByText('No CLI usage recorded yet in the last 30 days.')).toBeNull();
+    });
+
+    it('only requests tool call summaries in the export once the checkbox is checked', async () => {
+      const oldEnough = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString();
+      const session = daemonSession({ sessionId: 's1', projectPath: '/proj-a', lastActivity: oldEnough });
+      // jsdom doesn't implement the Blob-download APIs the export button uses — stub just enough
+      // that clicking it doesn't throw (see options-app.test.tsx for the same pattern).
+      URL.createObjectURL = vi.fn(() => 'blob:mock');
+      URL.revokeObjectURL = vi.fn();
+
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/export')) return jsonResponse('# Claude Code session');
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
+        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: {}, totals: zeroTotals });
+        if (requested.includes('/aggregate?by=model')) return jsonResponse({ models: [] });
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [session], totals: zeroTotals });
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+      await screen.findByText('Sessions nearing cleanup');
+
+      fireEvent.click(screen.getByText('Export markdown'));
+      await vi.waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/sessions\/s1\/export$/), expect.anything());
+      });
+
+      fireEvent.click(screen.getByLabelText('Include tool calls in export (as short summaries)'));
+      fireEvent.click(screen.getByText('Export markdown'));
+      await vi.waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/sessions/s1/export?toolCalls=true'), expect.anything());
+      });
     });
   });
 });

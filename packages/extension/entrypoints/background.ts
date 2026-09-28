@@ -190,13 +190,22 @@ async function normalizeAndStoreUsage(raw: unknown, capturedAt: string): Promise
   const result = usageResponseSchema.safeParse(raw);
   if (!result.success) {
     // claude.ai's shape moved out from under the schema — log and skip this snapshot rather
-    // than throw. A proper "data shape changed" UI indicator is follow-up work.
-    log(
-      'usage payload failed schema validation, skipping snapshot',
-      result.error.issues.slice(0, 3),
-    );
+    // than throw. Also recorded to db.meta (not just the console) so the popup/setup checklist
+    // can tell "a real parse failure happened" apart from "just hasn't captured anything yet" —
+    // previously this was invisible outside the background worker's own console, which is what
+    // let a real schema-shape gap (e.g. a brand-new account's zero-usage response) look
+    // indistinguishable from a user simply not having visited Settings > Usage yet.
+    const issue = result.error.issues[0];
+    log('usage payload failed schema validation, skipping snapshot', result.error.issues.slice(0, 3));
+    await db.meta.put({
+      key: 'usageParseError',
+      value: JSON.stringify({ capturedAt, path: issue?.path.join('.') ?? '', message: issue?.message ?? '' }),
+    });
     return;
   }
+  // A later capture parsed fine — a prior failure (transient, or fixed by an update) shouldn't
+  // linger and keep telling the user something's wrong when it isn't anymore.
+  await db.meta.delete('usageParseError');
   await storeSnapshotAndReact(normalizeUsageResponse(result.data, capturedAt));
 }
 

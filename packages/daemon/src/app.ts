@@ -131,7 +131,8 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.get('/sessions/:id/export', (c) => {
-    const markdown = exportSessionMarkdown(claudeConfigDir, c.req.param('id'));
+    const includeToolCalls = c.req.query('toolCalls') === 'true';
+    const markdown = exportSessionMarkdown(claudeConfigDir, c.req.param('id'), { includeToolCalls });
     if (markdown === null) return c.json({ error: 'not_found' }, 404);
     return c.text(markdown, 200, { 'Content-Type': 'text/markdown; charset=utf-8' });
   });

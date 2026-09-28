@@ -144,6 +144,30 @@ describe('background', () => {
     expect(records).toHaveLength(1);
   });
 
+  it('records a usageParseError breadcrumb when a usage payload fails validation, so the UI can tell that apart from just not having captured anything yet', async () => {
+    await extensionMessenger.sendMessage('captured', {
+      endpoint: 'usage',
+      capturedAt: '2026-08-26T17:20:00Z',
+      raw: { not: 'a real usage response' },
+    });
+
+    const error = await db.meta.get('usageParseError');
+    expect(error).toBeTruthy();
+    expect(JSON.parse(error!.value)).toMatchObject({ capturedAt: '2026-08-26T17:20:00Z' });
+  });
+
+  it('clears a prior usageParseError once a later usage payload parses successfully', async () => {
+    await db.meta.put({ key: 'usageParseError', value: JSON.stringify({ capturedAt: 'earlier' }) });
+
+    await extensionMessenger.sendMessage('captured', {
+      endpoint: 'usage',
+      capturedAt: '2026-08-26T17:20:00Z',
+      raw: loadUsageFixture('usage.get.overage.json'),
+    });
+
+    expect(await db.meta.get('usageParseError')).toBeUndefined();
+  });
+
   it('does not normalize message_limit captures (v1 scope: usage-only bars)', async () => {
     await extensionMessenger.sendMessage('captured', {
       endpoint: 'message_limit',
