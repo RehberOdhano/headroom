@@ -115,10 +115,15 @@ export function searchDaemonSessions(
   );
 }
 
-export async function exportDaemonSession(settings: Settings, sessionId: string): Promise<DaemonResult<string>> {
+export async function exportDaemonSession(
+  settings: Settings,
+  sessionId: string,
+  { includeToolCalls = false }: { includeToolCalls?: boolean } = {},
+): Promise<DaemonResult<string>> {
   if (!settings.daemonUrl) return { ok: false, error: 'not_configured', message: 'No daemon URL configured.' };
   try {
-    const response = await fetch(`${settings.daemonUrl}/sessions/${encodeURIComponent(sessionId)}/export`, {
+    const query = includeToolCalls ? '?toolCalls=true' : '';
+    const response = await fetch(`${settings.daemonUrl}/sessions/${encodeURIComponent(sessionId)}/export${query}`, {
       headers: baseHeaders(settings),
     });
     if (response.status === 401 || response.status === 403) {

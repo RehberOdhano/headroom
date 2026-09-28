@@ -14,6 +14,7 @@ export function SessionSearch({ settings }: { settings: Settings }) {
   const [searched, setSearched] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [includeToolCalls, setIncludeToolCalls] = useState(false);
 
   async function runSearch(event: React.FormEvent): Promise<void> {
     event.preventDefault();
@@ -71,7 +72,7 @@ export function SessionSearch({ settings }: { settings: Settings }) {
   }
 
   async function exportMatch(match: DaemonSearchMatch): Promise<void> {
-    const exported = await exportDaemonSession(settings, match.sessionId);
+    const exported = await exportDaemonSession(settings, match.sessionId, { includeToolCalls });
     if (exported.ok) downloadMarkdown(`${match.sessionId}.md`, exported.data);
   }
 
@@ -91,6 +92,14 @@ export function SessionSearch({ settings }: { settings: Settings }) {
           Search
         </button>
       </form>
+      <label className="checkbox-row" style={{ marginBottom: 'var(--space-4)' }}>
+        <input
+          type="checkbox"
+          checked={includeToolCalls}
+          onChange={(event) => setIncludeToolCalls(event.target.checked)}
+        />
+        Include tool calls in export (as short summaries)
+      </label>
       {error && <p className="error-text">{error}</p>}
       {searched && !error && matches.length === 0 && <p className="hint">No matches.</p>}
       {matches.map((match) => (

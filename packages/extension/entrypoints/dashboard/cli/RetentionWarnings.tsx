@@ -8,6 +8,7 @@ import type { Settings } from '../../../lib/protocol.js';
 
 export function RetentionWarnings({ settings }: { settings: Settings }) {
   const [sessions, setSessions] = useState<DaemonResult<DaemonSessionsReport> | null>(null);
+  const [includeToolCalls, setIncludeToolCalls] = useState(false);
 
   useEffect(() => {
     void getDaemonSessions(settings).then(setSessions);
@@ -27,6 +28,14 @@ export function RetentionWarnings({ settings }: { settings: Settings }) {
       <p className="hint" style={{ marginBottom: 'var(--space-4)' }}>
         Claude Code retains session logs for {SESSION_RETENTION_DAYS} days by default.
       </p>
+      <label className="checkbox-row" style={{ marginBottom: 'var(--space-4)' }}>
+        <input
+          type="checkbox"
+          checked={includeToolCalls}
+          onChange={(event) => setIncludeToolCalls(event.target.checked)}
+        />
+        Include tool calls in export (as short summaries)
+      </label>
       {warnings.map(({ session, daysLeft }) => (
         <div key={session.sessionId} className="warning-card">
           <div className="warning-info">
@@ -40,7 +49,7 @@ export function RetentionWarnings({ settings }: { settings: Settings }) {
             type="button"
             className="btn"
             onClick={async () => {
-              const exported = await exportDaemonSession(settings, session.sessionId);
+              const exported = await exportDaemonSession(settings, session.sessionId, { includeToolCalls });
               if (exported.ok) downloadMarkdown(`${session.sessionId}.md`, exported.data);
             }}
           >

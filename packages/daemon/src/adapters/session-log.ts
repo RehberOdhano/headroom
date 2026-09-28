@@ -115,11 +115,42 @@ function isImagePlaceholderText(text: string): boolean {
   return /^\[Image #\d+\]$/.test(text) || /^\[Image: source: .+\]$/.test(text);
 }
 
+const TOOL_SUMMARY_MAX_LENGTH = 200;
+
+function truncateSummary(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length > TOOL_SUMMARY_MAX_LENGTH ? `${trimmed.slice(0, TOOL_SUMMARY_MAX_LENGTH)}…` : trimmed;
+}
+
+/** A `tool_result` block's own `content` is the same string-or-blocks shape as a message's —
+ *  reuses `extractText`'s `text`-block-only extraction rather than a second near-duplicate. */
+function extractToolResultText(content: unknown): string {
+  return extractText(content);
+}
+
+/** One-line summaries, not the full call/result — keeps the export readable (this is the
+ *  "leave tool calls out to keep it readable" tradeoff, made opt-in instead of permanent). A
+ *  `tool_use` block's `input` can be any shape depending on the tool, so it's summarized as
+ *  compact JSON rather than guessing at per-tool field names like `file_path` or `command`. */
+function renderToolUseSummary(block: { name?: unknown; input?: unknown }): string | null {
+  if (typeof block.name !== 'string') return null;
+  const inputSummary = block.input !== undefined ? truncateSummary(JSON.stringify(block.input)) : '';
+  return `> 🔧 **${block.name}**${inputSummary ? ` \`${inputSummary}\`` : ''}`;
+}
+
+function renderToolResultSummary(block: { content?: unknown; is_error?: unknown }): string | null {
+  const text = truncateSummary(extractToolResultText(block.content));
+  if (!text) return null;
+  return `> ${block.is_error === true ? '⚠️' : '↩'} ${text}`;
+}
+
 /** Export's version of `extractText`: also embeds `image` blocks as markdown image tags with
  *  the block's own base64 data inlined (`data:` URI) — no dependency on the image-cache file
  *  still existing on disk, and the result stays a single portable file. Drops the placeholder
- *  text blocks that would otherwise duplicate/leak a local path once the real image renders. */
-function renderContentForExport(content: unknown): string {
+ *  text blocks that would otherwise duplicate/leak a local path once the real image renders.
+ *  `includeToolCalls` additionally renders `tool_use`/`tool_result` blocks as compact one-line
+ *  summaries (opt-in — see `exportSessionMarkdown`'s doc comment for why this defaults off). */
+function renderContentForExport(content: unknown, includeToolCalls: boolean): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
 
@@ -141,6 +172,20 @@ function renderContentForExport(content: unknown): string {
       if (typeof mediaType === 'string' && typeof data === 'string') {
         parts.push(`![](data:${mediaType};base64,${data})`);
       }
+      continue;
+    }
+
+    if (!includeToolCalls) continue;
+
+    if (type === 'tool_use') {
+      const summary = renderToolUseSummary(block as { name?: unknown; input?: unknown });
+      if (summary) parts.push(summary);
+      continue;
+    }
+
+    if (type === 'tool_result') {
+      const summary = renderToolResultSummary(block as { content?: unknown; is_error?: unknown });
+      if (summary) parts.push(summary);
     }
   }
   return parts.join('\n\n');
@@ -207,8 +252,17 @@ export function searchSessions(claudeConfigDir: string, query: string, limit = 2
 }
 
 /** Renders a session's transcript as readable markdown — the browser-side equivalent of
- *  running `claude --resume <id>` then `/export` in a terminal, without needing one open. */
-export function exportSessionMarkdown(claudeConfigDir: string, sessionId: string): string | null {
+ *  running `claude --resume <id>` then `/export` in a terminal, without needing one open.
+ *  `includeToolCalls` defaults to `false`: tool calls/results (and thinking) are noise for the
+ *  common case of re-reading a conversation, so they're left out unless asked for — same
+ *  reasoning as `searchSessions` only scanning `text` blocks. When on, each call/result renders
+ *  as a compact one-line summary (see `renderToolUseSummary`/`renderToolResultSummary`), not the
+ *  full raw input/output, to keep the export readable either way. */
+export function exportSessionMarkdown(
+  claudeConfigDir: string,
+  sessionId: string,
+  { includeToolCalls = false }: { includeToolCalls?: boolean } = {},
+): string | null {
   const file = findSessionFiles(claudeConfigDir).find((f) => f.sessionId === sessionId);
   if (!file) return null;
 
@@ -216,7 +270,7 @@ export function exportSessionMarkdown(claudeConfigDir: string, sessionId: string
   for (const entry of readTranscriptLines(file.filePath)) {
     if (entry.type !== 'user' && entry.type !== 'assistant') continue;
     if (!entry.message) continue;
-    const text = renderContentForExport(entry.message.content).trim();
+    const text = renderContentForExport(entry.message.content, includeToolCalls).trim();
     if (!text) continue;
     const heading = entry.type === 'user' ? '## User' : '## Assistant';
     lines.push(heading, '', text, '');

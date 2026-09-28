@@ -150,6 +150,24 @@ describe('daemon app', () => {
       const res = await createApp().request('/sessions/does-not-exist/export');
       expect(res.status).toBe(404);
     });
+
+    it('includes tool call summaries only when ?toolCalls=true', async () => {
+      await withFixtureClaudeDir(
+        async (claudeConfigDir) => {
+          const app = createApp({ ccusage: { claudeConfigDir } });
+          const withoutToolCalls = await (
+            await app.request('/sessions/11111111-1111-4111-8111-111111111111/export')
+          ).text();
+          expect(withoutToolCalls).not.toContain('🔧');
+
+          const withToolCalls = await (
+            await app.request('/sessions/11111111-1111-4111-8111-111111111111/export?toolCalls=true')
+          ).text();
+          expect(withToolCalls).toContain('🔧 **Read**');
+        },
+        'session-log-dir',
+      );
+    });
   });
 
   describe('/config*', () => {

@@ -145,9 +145,9 @@ existing statusline script's stdin through it and append its output as an additi
 | Pace warning | Opt-in (Settings): a notification *before* a limit is hit — when the burn-rate forecast, on a bar with at least 10% used and at least medium confidence, lands 30+ minutes before the window resets. Once per limit window. |
 | Threshold alerts | Configurable browser notifications (default: 80% / 95%). |
 | On-page badge | A small, self-contained, toggleable usage indicator on claude.ai. |
-| CLI attribution *(daemon)* | Token totals by project and model (with each model's share of tokens) and a rough tokens-per-percent-of-weekly-limit estimate, applied per-project too ("~N% of this week") and, week by week, as a small CLI-vs-chat split chart. CSV export alongside the existing per-session markdown export. |
+| CLI attribution *(daemon)* | Token totals by project, by model (with each model's share of tokens), and by individual session, plus a rough tokens-per-percent-of-weekly-limit estimate, applied per-project too ("~N% of this week") and, week by week, as a small CLI-vs-chat split chart. CSV export alongside the existing per-session markdown export. |
 | Session search *(daemon)* | Full-text search across local Claude Code sessions, with a one-click `cd <dir> && claude --resume <id>` copy button. |
-| Retention warnings *(daemon)* | Flags sessions nearing Claude Code's 30-day log cleanup, with one-click markdown export (embedded images included). |
+| Retention warnings *(daemon)* | Flags sessions nearing Claude Code's 30-day log cleanup, with one-click markdown export (embedded images included, and an opt-in checkbox to include tool calls/results as short summaries). |
 | Guardrails *(daemon)* | See and override Claude Code's permission rules across global/project/local scope layers, plus read-only visibility into hooks and skills, for a project you pick. Overrides only ever write to that project's gitignored `.claude/settings.local.json` — never a shared, committed file. "Apply recommended protections" denies every bundled known-risky command pattern not already covered, in one click, writing one rule at a time to avoid racing its own writes. Also previews and edits CLAUDE.md docs (rendered markdown, with an explicit Save — no autosave). A cross-project health checklist (CLAUDE.md / settings / hooks / skills present?) sits above the picker, and a project you've viewed before flags exactly what changed ("2 new allow rules, 1 hook removed") since you last viewed it — escalated to a warning if a newly-allowed rule matches a known-risky command pattern. |
 | Subagent model routing *(daemon)* | See and change which model each project subagent uses (`inherit`/`opus`/`sonnet`/`haiku`, or a custom model id) directly from its `.claude/agents/*.md` frontmatter — e.g. Opus for a planning subagent, Haiku for a quick one. Only ever writes to a project's own agents; a personal global agent is shown read-only. |
 | Daemon liveness | The options page shows whether the daemon was reachable on its last background check, not just whether pairing once succeeded — a crashed or stopped daemon no longer silently shows as "Connected automatically" forever. A setup checklist also flags the other silent prerequisites (opened Settings → Usage on claude.ai yet? first snapshot captured? daemon paired?) that would otherwise leave tabs empty with no explanation. |
@@ -192,7 +192,7 @@ packages/
 
 ```sh
 pnpm install
-pnpm -r run test         # 603 tests across the three packages as of this writing
+pnpm -r run test         # 608 tests across the three packages as of this writing
 pnpm -r run typecheck
 pnpm -r run build
 pnpm --filter @headroom/extension run test:e2e   # builds, then drives the real extension in Chromium against a stubbed claude.ai
