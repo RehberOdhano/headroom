@@ -125,6 +125,10 @@ export default function App() {
   // just hasn't landed yet", instead of repeating the same instruction to someone who already
   // did it (confusing enough that it's read as the extension being stuck).
   const visitedClaudeAi = useLiveQuery(async () => Boolean(await db.meta.get('orgId')), []);
+  // Set by background.ts when a real /usage response fails schema validation — tells a genuine
+  // parse failure (claude.ai changed its response shape) apart from just not having captured
+  // anything yet, which otherwise look identical from here.
+  const usageParseError = useLiveQuery(() => db.meta.get('usageParseError'), []);
   const recentSnapshots = useLiveQuery(
     () => db.limitSnapshots.orderBy('capturedAt').reverse().limit(POPUP_HISTORY_LIMIT).toArray(),
     [],
@@ -207,6 +211,19 @@ export default function App() {
             View history & forecast →
           </a>
         </>
+      ) : visitedClaudeAi && usageParseError ? (
+        <div>
+          <p style={styles.empty}>
+            Account detected, but the usage data couldn't be read — claude.ai may have changed its
+            format. This has been logged; try again after the next extension update, or see the
+            setup checklist.
+          </p>
+          <p style={styles.updated}>
+            <a href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
+              Setup checklist
+            </a>
+          </p>
+        </div>
       ) : visitedClaudeAi ? (
         <div>
           <p style={styles.empty}>
@@ -228,6 +245,10 @@ export default function App() {
           <a style={styles.emptyButton} href={USAGE_SETTINGS_URL} target="_blank" rel="noreferrer">
             Open Settings → Usage
           </a>
+          <p style={styles.updated}>
+            On the free plan? claude.ai may send you to a pricing page instead — tracking needs an
+            active plan with usage limits.
+          </p>
           <p style={styles.updated}>
             <a href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
               Setup checklist

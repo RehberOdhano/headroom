@@ -25,6 +25,10 @@ export function SetupChecklist({ settings, daemonHealth }: { settings: Settings;
   // permanently hide this section for the exact case it exists to flag.
   const visitedClaudeAi = useLiveQuery(async () => Boolean(await db.meta.get('orgId')), []);
   const capturedSnapshot = useLiveQuery(async () => (await db.limitSnapshots.count()) > 0, []);
+  // Set by background.ts when a real /usage response fails schema validation — tells a genuine
+  // parse failure (claude.ai changed its response shape) apart from a snapshot simply not having
+  // landed yet, which otherwise look identical: an unchecked second box either way.
+  const usageParseError = useLiveQuery(() => db.meta.get('usageParseError'), []);
 
   const daemonPaired = Boolean(settings.daemonToken);
 
@@ -53,6 +57,12 @@ export function SetupChecklist({ settings, daemonHealth }: { settings: Settings;
           </li>
         ))}
       </ul>
+      {!capturedSnapshot && usageParseError && (
+        <p style={styles.error}>
+          claude.ai's usage data couldn't be read (its response format may have changed). This has
+          been logged locally — it should resolve with the next extension update.
+        </p>
+      )}
     </section>
   );
 }

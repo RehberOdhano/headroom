@@ -178,6 +178,10 @@ existing statusline script's stdin through it and append its output as an additi
   (`http://127.0.0.1:4317/*`), because Chrome's manifest validator rejects a wildcard port. Running
   the daemon on a custom `PORT` (the daemon URL is no longer editable in the options page) isn't
   supported.
+- **Requires an active Claude plan with usage limits.** A free/no-plan claude.ai account's
+  Settings → Usage link redirects to a pricing/upgrade page instead of a usage page — there's
+  nothing there for the extension to read, so session/weekly tracking isn't available until
+  upgrading. This is claude.ai's own routing, not something the extension controls.
 
 ## Development
 
@@ -192,7 +196,7 @@ packages/
 
 ```sh
 pnpm install
-pnpm -r run test         # 609 tests across the three packages as of this writing
+pnpm -r run test         # 613 tests across the three packages as of this writing
 pnpm -r run typecheck
 pnpm -r run build
 pnpm --filter @headroom/extension run test:e2e   # builds, then drives the real extension in Chromium against a stubbed claude.ai
