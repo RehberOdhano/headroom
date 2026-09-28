@@ -35,6 +35,17 @@ describe('popup App', () => {
     expect(button.getAttribute('href')).toBe('https://claude.ai/settings/usage');
   });
 
+  it('tells a detected-but-no-snapshot-yet user to wait, instead of repeating the same instruction', async () => {
+    // orgId is set the moment any capture arrives, before a snapshot necessarily lands in
+    // limitSnapshots — see background.ts's 'captured' handler. A user in this gap already did
+    // the right thing; telling them to do it again reads as the extension being stuck.
+    await db.meta.put({ key: 'orgId', value: 'org-123' });
+    render(<App />);
+    expect(await screen.findByText(/Account detected/)).toBeTruthy();
+    expect(screen.queryByText(/No usage data yet/)).toBeNull();
+    expect(screen.queryByRole('link', { name: /Open Settings → Usage/ })).toBeNull();
+  });
+
   it('renders bars and an extra-credits row without throwing', async () => {
     const snapshot: LimitSnapshotRecord = {
       capturedAt: new Date().toISOString(),

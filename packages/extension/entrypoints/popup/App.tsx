@@ -120,6 +120,11 @@ const POPUP_HISTORY_LIMIT = 100;
 
 export default function App() {
   const latest = useLiveQuery(() => db.limitSnapshots.orderBy('capturedAt').last(), []);
+  // Same signal the options page's setup checklist uses for its "Opened Settings → Usage" step —
+  // lets the empty state tell "haven't visited yet" apart from "account detected, first snapshot
+  // just hasn't landed yet", instead of repeating the same instruction to someone who already
+  // did it (confusing enough that it's read as the extension being stuck).
+  const visitedClaudeAi = useLiveQuery(async () => Boolean(await db.meta.get('orgId')), []);
   const recentSnapshots = useLiveQuery(
     () => db.limitSnapshots.orderBy('capturedAt').reverse().limit(POPUP_HISTORY_LIMIT).toArray(),
     [],
@@ -202,6 +207,18 @@ export default function App() {
             View history & forecast →
           </a>
         </>
+      ) : visitedClaudeAi ? (
+        <div>
+          <p style={styles.empty}>
+            Account detected — the first usage snapshot hasn't landed yet. This is usually quick;
+            try Refresh above in a moment.
+          </p>
+          <p style={styles.updated}>
+            <a href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
+              Setup checklist
+            </a>
+          </p>
+        </div>
       ) : (
         <div>
           <p style={styles.empty}>
