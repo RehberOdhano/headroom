@@ -75,7 +75,6 @@ export function CliOverview({ settings }: { settings: Settings }) {
   const [byModel, setByModel] = useState<DaemonResult<{ models: { modelName: string; inputTokens: number; outputTokens: number }[] }> | null>(null);
   const [sessions, setSessions] = useState<DaemonResult<DaemonSessionsReport> | null>(null);
   const [projectFilter, setProjectFilter] = useState('');
-  const [modelFilter, setModelFilter] = useState('');
   const [sessionFilter, setSessionFilter] = useState('');
 
   useEffect(() => {
@@ -114,10 +113,10 @@ export function CliOverview({ settings }: { settings: Settings }) {
     : [];
   const sessionRows = sessions?.ok ? [...sessions.data.sessions].sort((a, b) => b.totalTokens - a.totalTokens) : [];
 
-  // Filtered down for both display and CSV export — a long table (many projects/models, or a
-  // heavy CLI user's many sessions) is otherwise nothing but scrolling to find one entry.
+  // Filtered down for both display and CSV export — a long table (many projects, or a heavy CLI
+  // user's many sessions) is otherwise nothing but scrolling to find one entry. Models aren't
+  // filtered: an account realistically only ever has a handful in play, never enough to need it.
   const filteredProjectRows = projectRows.filter((row) => matchesQuery(projectFilter, row.project));
-  const filteredModelRows = modelRows.filter((model) => matchesQuery(modelFilter, model.modelName));
   const filteredSessionRows = sessionRows.filter((session) => matchesQuery(sessionFilter, session.projectPath, session.sessionId));
 
   return (
@@ -227,7 +226,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
                 downloadCsv(
                   'headroom-by-model.csv',
                   ['Model', 'Input', 'Output', '% of tokens'],
-                  filteredModelRows.map((model) => [
+                  modelRows.map((model) => [
                     model.modelName,
                     model.inputTokens,
                     model.outputTokens,
@@ -239,38 +238,28 @@ export function CliOverview({ settings }: { settings: Settings }) {
               Download CSV
             </button>
           </div>
-          <input
-            className="search-input filter-input"
-            value={modelFilter}
-            onChange={(event) => setModelFilter(event.target.value)}
-            placeholder="Filter models…"
-          />
-          {filteredModelRows.length === 0 ? (
-            <p className="hint">No models match "{modelFilter}".</p>
-          ) : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Model</th>
-                    <th>Input</th>
-                    <th>Output</th>
-                    <th>% of tokens</th>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Input</th>
+                  <th>Output</th>
+                  <th>% of tokens</th>
+                </tr>
+              </thead>
+              <tbody>
+                {modelRows.map((model) => (
+                  <tr key={model.modelName}>
+                    <td>{model.modelName}</td>
+                    <td>{formatTokens(model.inputTokens)}</td>
+                    <td>{formatTokens(model.outputTokens)}</td>
+                    <td>{formatPercentShare(modelTokenShare(model, modelRows))}%</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filteredModelRows.map((model) => (
-                    <tr key={model.modelName}>
-                      <td>{model.modelName}</td>
-                      <td>{formatTokens(model.inputTokens)}</td>
-                      <td>{formatTokens(model.outputTokens)}</td>
-                      <td>{formatPercentShare(modelTokenShare(model, modelRows))}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
