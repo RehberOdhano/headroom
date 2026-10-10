@@ -228,6 +228,83 @@ describe('CliTab / SearchTab', () => {
       expect(await screen.findByText('No projects match "no-such-project".')).toBeTruthy();
     });
 
+    it('shows "No CLI usage recorded" only for a genuinely empty, successful result — not a failed one', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
+        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: {}, totals: zeroTotals });
+        if (requested.includes('/aggregate?by=model')) return jsonResponse({ models: [] });
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [], totals: zeroTotals });
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+      expect(await screen.findByText('No CLI usage recorded yet in the last 30 days.')).toBeTruthy();
+    });
+
+    it('shows a section-level error for a failed By-project request, without hiding By-model/By-session data that loaded fine', async () => {
+      const session = daemonSession({ sessionId: 's1', projectPath: '/proj-a', totalTokens: 500 });
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
+        if (requested.includes('/aggregate?by=project')) return new Response('', { status: 500 });
+        if (requested.includes('/aggregate?by=model')) {
+          return jsonResponse({ models: [{ modelName: 'claude-sonnet-5', inputTokens: 1, outputTokens: 1, cost: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }] });
+        }
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [session], totals: zeroTotals });
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+
+      expect(await screen.findByText(/Daemon returned 500/)).toBeTruthy();
+      // Partial success: the other two sections still render real data.
+      expect(screen.getByText('claude-sonnet-5')).toBeTruthy();
+      expect(screen.getByText('/proj-a')).toBeTruthy();
+      // Must not also claim a confirmed-empty result.
+      expect(screen.queryByText('No CLI usage recorded yet in the last 30 days.')).toBeNull();
+    });
+
+    it('shows a section-level error for a failed By-model request, without hiding By-project/By-session data that loaded fine', async () => {
+      const session = daemonSession({ sessionId: 's1', projectPath: '/proj-a', totalTokens: 500 });
+      const dailyEntry = { date: '2026-08-01', totalTokens: 500, totalCost: 0, inputTokens: 300, outputTokens: 200, cacheCreationTokens: 0, cacheReadTokens: 0, modelBreakdowns: [], modelsUsed: [] };
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
+        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: { '/proj-a': [dailyEntry] }, totals: zeroTotals });
+        if (requested.includes('/aggregate?by=model')) return new Response('', { status: 500 });
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [session], totals: zeroTotals });
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+
+      expect(await screen.findByText(/Daemon returned 500/)).toBeTruthy();
+      expect(screen.getAllByText('/proj-a').length).toBeGreaterThan(0);
+      expect(screen.queryByText('No CLI usage recorded yet in the last 30 days.')).toBeNull();
+    });
+
+    it('shows a section-level error for a failed sessions request, without hiding By-project/By-model data that loaded fine', async () => {
+      const dailyEntry = { date: '2026-08-01', totalTokens: 500, totalCost: 0, inputTokens: 300, outputTokens: 200, cacheCreationTokens: 0, cacheReadTokens: 0, modelBreakdowns: [], modelsUsed: [] };
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
+        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: { '/proj-a': [dailyEntry] }, totals: zeroTotals });
+        if (requested.includes('/aggregate?by=model')) {
+          return jsonResponse({ models: [{ modelName: 'claude-sonnet-5', inputTokens: 1, outputTokens: 1, cost: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }] });
+        }
+        if (requested.includes('/sessions')) return new Response('', { status: 500 });
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+
+      expect(await screen.findByText(/Daemon returned 500/)).toBeTruthy();
+      expect(screen.getByText('/proj-a')).toBeTruthy();
+      expect(screen.getByText('claude-sonnet-5')).toBeTruthy();
+      expect(screen.queryByText('No CLI usage recorded yet in the last 30 days.')).toBeNull();
+    });
+
     it('shows a week-over-week delta computed from the same 30-day daily fetch, no new call', async () => {
       // Dates relative to the real wall clock at test-run time, not a hardcoded date — avoids
       // depending on (or needing to fake) the system clock, since weekOverWeek() buckets off

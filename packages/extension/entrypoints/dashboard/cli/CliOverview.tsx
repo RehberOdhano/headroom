@@ -133,6 +133,12 @@ export function CliOverview({ settings }: { settings: Settings }) {
     ? [...byModel.data.models].sort((a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens))
     : [];
   const sessionRows = sessions?.ok ? [...sessions.data.sessions].sort((a, b) => b.totalTokens - a.totalTokens) : [];
+  // Each table's own fetch can fail independently of the others — a failure must render as its
+  // own section-level error, not silently fall back to the same empty table a genuinely-zero
+  // result renders as. One section failing doesn't hide data the others loaded successfully.
+  const byProjectFailed = byProject && !byProject.ok;
+  const byModelFailed = byModel && !byModel.ok;
+  const sessionsFailed = sessions && !sessions.ok;
 
   // Filtered down for both display and CSV export — a long table (many projects, or a heavy CLI
   // user's many sessions) is otherwise nothing but scrolling to find one entry. Models aren't
@@ -179,6 +185,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
         </>
       )}
 
+      {byProjectFailed && <p className="error-text">{byProject.message}</p>}
       {projectRows.length > 0 && (
         <>
           <div className="card-header">
@@ -236,6 +243,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
         </>
       )}
 
+      {byModelFailed && <p className="error-text">{byModel.message}</p>}
       {modelRows.length > 0 && (
         <>
           <div className="card-header">
@@ -284,6 +292,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
         </>
       )}
 
+      {sessionsFailed && <p className="error-text">{sessions.message}</p>}
       {sessionRows.length > 0 && (
         <>
           <div className="card-header">
@@ -381,6 +390,9 @@ export function CliOverview({ settings }: { settings: Settings }) {
       {projectRows.length === 0 &&
         modelRows.length === 0 &&
         sessionRows.length === 0 &&
+        !byProjectFailed &&
+        !byModelFailed &&
+        !sessionsFailed &&
         (!daily?.ok || daily.data.totals.totalTokens === 0) && (
           <p className="hint">No CLI usage recorded yet in the last {RECENT_DAYS} days.</p>
         )}

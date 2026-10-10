@@ -380,11 +380,9 @@ async function checkBarAlert(
 }
 
 /**
- * A single small "is anything worth my attention?" count on the toolbar icon, aggregating
- * signals that would otherwise only surface if the user happened to open the right dashboard
- * tab: sessions nearing Claude Code's 30-day log cleanup. Deliberately excludes Guardrails config drift —
- * checking that for every known project on every 5-minute poll would mean a `/config` fetch per
- * project, too much daemon load for a background badge.
+ * A single small "is anything worth my attention?" count on the toolbar icon: sessions nearing
+ * Claude Code's 30-day log cleanup, which would otherwise only surface if the user happened to
+ * open the Sessions tab.
  */
 async function checkSessionsAndBadge(): Promise<void> {
   const settings = await getSettings();
