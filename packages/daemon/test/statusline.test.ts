@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, symlinkSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import {
   buildStatusLine,
   fetchTodayUsage,
@@ -7,7 +10,10 @@ import {
   formatSessionWindow,
   formatTokens,
   formatWeeklyWindow,
+  isMainModule,
 } from '../bin/statusline.mjs';
+
+const STATUSLINE_PATH = path.resolve(import.meta.dirname, '../bin/statusline.mjs');
 
 describe('formatTokens', () => {
   it('formats under 1000 as-is', () => {
@@ -129,6 +135,40 @@ describe('buildStatusLine', () => {
       { totalCost: 4.5, totalTokens: 500 },
     );
     expect(line).toBe('Today: 500 Tokens');
+  });
+});
+
+describe('isMainModule', () => {
+  const originalArgv1 = process.argv[1];
+  let tmpDir: string | null = null;
+
+  afterEach(() => {
+    process.argv[1] = originalArgv1;
+    if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+    tmpDir = null;
+  });
+
+  it('recognizes itself when invoked directly', () => {
+    process.argv[1] = STATUSLINE_PATH;
+    expect(isMainModule()).toBe(true);
+  });
+
+  // Real regression case: npm installs this as a symlinked global bin
+  // (.../bin/claude-usage-statusline -> .../bin/statusline.mjs). Node resolves `import.meta.url`
+  // to the real target but leaves `process.argv[1]` as the symlink path a plain string
+  // comparison never matches, so `main()` silently never ran for any real install — this test
+  // reproduces that exact shape with a real symlink, not a mock.
+  it('recognizes itself when invoked through a symlink', () => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'statusline-symlink-'));
+    const link = path.join(tmpDir, 'claude-usage-statusline');
+    symlinkSync(STATUSLINE_PATH, link);
+    process.argv[1] = link;
+    expect(isMainModule()).toBe(true);
+  });
+
+  it('returns false for an unrelated entry path', () => {
+    process.argv[1] = path.join(tmpdir(), 'some-other-script.mjs');
+    expect(isMainModule()).toBe(false);
   });
 });
 

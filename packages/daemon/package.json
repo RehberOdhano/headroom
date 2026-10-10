@@ -1,6 +1,6 @@
 {
   "name": "@headroom/daemon",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Optional, read-only local daemon for Claude Usage Companion — unlocks CLI/model/session/subagent attribution, session search, and retention warnings.",
   "license": "MIT",
   "type": "module",

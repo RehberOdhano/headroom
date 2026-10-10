@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Claude Code statusline hook script: configured via `statusLine` in `~/.claude/settings.json`,
@@ -118,6 +119,21 @@ async function main() {
   process.stdout.write(buildStatusLine(input, todayTotals));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// A plain `import.meta.url === file://${process.argv[1]}` check breaks once this file is reached
+// through the npm-installed global bin, which is a symlink: Node resolves `import.meta.url` to
+// the real target but leaves `process.argv[1]` as the symlink path, so the two never match and
+// `main()` silently never runs — this is how the published statusline shipped completely
+// non-functional for every real install. Resolving both sides through the real filesystem path
+// first makes the check symlink-proof.
+export function isMainModule() {
+  if (!process.argv[1]) return false;
+  try {
+    return fileURLToPath(import.meta.url) === realpathSync(process.argv[1]);
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
   main();
 }
