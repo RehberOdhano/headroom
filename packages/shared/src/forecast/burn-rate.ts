@@ -16,26 +16,34 @@ export interface BurnRateForecast {
 }
 
 /**
- * Linear projection of a limit bar's next 100%, fit only to its *current run* — the points
- * since the last reset. A limit window resets periodically (percent drops back down), and
- * fitting a line across that drop would extrapolate nonsense, so history is walked backward
- * from the most recent point and cut the moment percent decreases.
- *
- * Returns null if the current run has fewer than two points (can't fit a line to one).
+ * Splits chronologically-sorted points into independent runs, starting a new run wherever
+ * percent decreases relative to the previous point (a reset happened). Shared by
+ * `forecastBurnRate` (which only ever wants the last run) and `detectBurnRateAnomaly` (which
+ * wants every completed run as a historical baseline) — this is the one place that decides
+ * where a reset boundary falls; don't duplicate the splitting rule elsewhere.
  */
-export function forecastBurnRate(history: TimedPercent[], now: Date = new Date()): BurnRateForecast | null {
-  const sorted = [...history].sort(
-    (a, b) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime(),
-  );
-
-  let runStart = sorted.length - 1;
-  for (let i = sorted.length - 1; i > 0; i--) {
-    if (sorted[i]!.percent < sorted[i - 1]!.percent) break;
-    runStart = i - 1;
+export function segmentRuns(sorted: TimedPercent[]): TimedPercent[][] {
+  if (sorted.length === 0) return [];
+  const runs: TimedPercent[][] = [[sorted[0]!]];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i]!.percent < sorted[i - 1]!.percent) runs.push([]);
+    runs[runs.length - 1]!.push(sorted[i]!);
   }
-  const run = sorted.slice(runStart);
-  if (run.length < 2) return null;
+  return runs;
+}
 
+export interface LinearFit {
+  /** Percentage points per hour. */
+  rate: number;
+  /** Percent at `run[0]`'s own timestamp (hoursSinceStart = 0). */
+  intercept: number;
+}
+
+/** Ordinary least-squares fit of percent against hours-since-the-run-started. Callers decide
+ *  what counts as "enough points" — this will compute a (degenerate) fit for a single point too
+ *  (rate 0, intercept = that point's percent), so check `run.length >= 2` first if a real slope
+ *  is required. */
+export function fitLinearRate(run: TimedPercent[]): LinearFit {
   const runStartMs = new Date(run[0]!.capturedAt).getTime();
   const hoursSinceStart = run.map((point) => (new Date(point.capturedAt).getTime() - runStartMs) / 3_600_000);
   const percentValues = run.map((point) => point.percent);
@@ -48,6 +56,29 @@ export function forecastBurnRate(history: TimedPercent[], now: Date = new Date()
   const denominator = pointCount * sumHoursSquared - sumHours * sumHours;
   const rate = denominator === 0 ? 0 : (pointCount * sumHoursPercent - sumHours * sumPercent) / denominator;
   const intercept = (sumPercent - rate * sumHours) / pointCount;
+  return { rate, intercept };
+}
+
+/**
+ * Linear projection of a limit bar's next 100%, fit only to its *current run* — the points
+ * since the last reset. A limit window resets periodically (percent drops back down), and
+ * fitting a line across that drop would extrapolate nonsense, so only the last of `segmentRuns`'
+ * segments is used.
+ *
+ * Returns null if the current run has fewer than two points (can't fit a line to one).
+ */
+export function forecastBurnRate(history: TimedPercent[], now: Date = new Date()): BurnRateForecast | null {
+  const sorted = [...history].sort(
+    (a, b) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime(),
+  );
+
+  const runs = segmentRuns(sorted);
+  const run = runs.at(-1) ?? [];
+  if (run.length < 2) return null;
+
+  const { rate, intercept } = fitLinearRate(run);
+  const runStartMs = new Date(run[0]!.capturedAt).getTime();
+  const pointCount = run.length;
 
   let projectedFullAt: string | null = null;
   if (rate > 0) {
@@ -63,7 +94,7 @@ export function forecastBurnRate(history: TimedPercent[], now: Date = new Date()
       !Number.isNaN(projectedDate.getTime()) && projectedMs > now.getTime() ? projectedDate.toISOString() : null;
   }
 
-  const spanHours = hoursSinceStart[pointCount - 1]!;
+  const spanHours = (new Date(run.at(-1)!.capturedAt).getTime() - runStartMs) / 3_600_000;
   const confidence: BurnRateForecast['confidence'] =
     pointCount >= 5 && spanHours >= 1 ? 'high' : pointCount >= 3 ? 'medium' : 'low';
 

@@ -23,7 +23,21 @@ import type { DaemonSearchMatch, DaemonSearchResponse } from '@headroom/shared';
 
 interface TranscriptLine {
   type?: string;
-  message?: { role?: string; content?: unknown };
+  message?: {
+    role?: string;
+    content?: unknown;
+    /** Present on assistant lines in both main and subagent transcripts. `'<synthetic>'` is a
+     *  real sentinel Claude Code writes for a non-model-generated entry (e.g. a synthesized
+     *  turn) — never a second real model; callers reading this for attribution must treat it
+     *  (and any other non-string value) as "no model", not as a distinct model name. */
+    model?: unknown;
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
+  };
   timestamp?: string;
   cwd?: string;
 }
@@ -276,4 +290,111 @@ export function exportSessionMarkdown(
     lines.push(heading, '', text, '');
   }
   return lines.join('\n');
+}
+
+export interface SubagentSummary {
+  agentId: string;
+  /** From the sibling `.meta.json` — `null` when it's missing or malformed rather than guessed. */
+  agentType: string | null;
+  description: string | null;
+  /** Links back to the specific `tool_use` block in the parent transcript that spawned this
+   *  agent (verified against real local data — see root CLAUDE.md's subagent-attribution notes).
+   *  `null` when the `.meta.json` doesn't have one. */
+  toolUseId: string | null;
+  /** The one real model observed across this agent's assistant lines, or `null` if none were
+   *  found. Real local data never showed more than one genuine model per agent invocation
+   *  (the one apparent counter-example was Claude Code's own `'<synthetic>'` sentinel, not a
+   *  second model) — this reports the first one found rather than trying to represent multiple. */
+  model: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  /** Sum of the four fields above. Reported entirely independently of ccusage's own
+   *  session/project/model totals elsewhere in this codebase — never added to or merged with
+   *  them. Real local data gave inconsistent signals on whether ccusage's own totals already
+   *  include subagent activity, so this number must never be presented as additive. */
+  totalTokens: number;
+}
+
+interface SubagentMetaFile {
+  agentType?: unknown;
+  description?: unknown;
+  toolUseId?: unknown;
+}
+
+/** Fail-soft like every other hand-edited-adjacent file this adapter reads — a missing or
+ *  malformed `.meta.json` resolves to all-null fields rather than throwing. */
+function readSubagentMeta(filePath: string): { agentType: string | null; description: string | null; toolUseId: string | null } {
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf-8')) as SubagentMetaFile;
+    return {
+      agentType: typeof parsed.agentType === 'string' ? parsed.agentType : null,
+      description: typeof parsed.description === 'string' ? parsed.description : null,
+      toolUseId: typeof parsed.toolUseId === 'string' ? parsed.toolUseId : null,
+    };
+  } catch {
+    return { agentType: null, description: null, toolUseId: null };
+  }
+}
+
+/**
+ * Every subagent transcript for one session — `<projectDir>/<sessionId>/subagents/agent-*.jsonl`,
+ * each with a sibling `agent-*.meta.json` (real structure, confirmed against real local Claude
+ * Code data, not the assumed shape an earlier fixture guessed at). `findSessionFiles` never
+ * descends into this directory on its own — this is the one place that does, and only when a
+ * caller explicitly asks for one session's subagents, never as part of the regular session list.
+ * Read-only: nothing here writes anything.
+ */
+export function findSubagentSummaries(claudeConfigDir: string, sessionId: string): SubagentSummary[] {
+  const file = findSessionFiles(claudeConfigDir).find((f) => f.sessionId === sessionId);
+  if (!file) return [];
+
+  const subagentsDir = path.join(path.dirname(file.filePath), sessionId, 'subagents');
+  let entries: string[];
+  try {
+    entries = readdirSync(subagentsDir);
+  } catch {
+    return [];
+  }
+
+  const summaries: SubagentSummary[] = [];
+  for (const entry of entries) {
+    if (!entry.endsWith('.jsonl')) continue;
+    const agentId = entry.slice('agent-'.length, -'.jsonl'.length);
+    const meta = readSubagentMeta(path.join(subagentsDir, entry.replace(/\.jsonl$/, '.meta.json')));
+
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let cacheCreationTokens = 0;
+    let cacheReadTokens = 0;
+    let model: string | null = null;
+
+    for (const line of readTranscriptLines(path.join(subagentsDir, entry))) {
+      if (line.type !== 'assistant' || !line.message) continue;
+      if (!model && typeof line.message.model === 'string' && line.message.model !== '<synthetic>') {
+        model = line.message.model;
+      }
+      const usage = line.message.usage;
+      if (!usage) continue;
+      inputTokens += usage.input_tokens ?? 0;
+      outputTokens += usage.output_tokens ?? 0;
+      cacheCreationTokens += usage.cache_creation_input_tokens ?? 0;
+      cacheReadTokens += usage.cache_read_input_tokens ?? 0;
+    }
+
+    summaries.push({
+      agentId,
+      agentType: meta.agentType,
+      description: meta.description,
+      toolUseId: meta.toolUseId,
+      model,
+      inputTokens,
+      outputTokens,
+      cacheCreationTokens,
+      cacheReadTokens,
+      totalTokens: inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens,
+    });
+  }
+  return summaries;
 }

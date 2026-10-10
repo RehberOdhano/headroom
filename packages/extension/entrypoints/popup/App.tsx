@@ -6,6 +6,8 @@ import { extensionMessenger } from '../../lib/messaging.js';
 import { barColor, describeSource, formatPercent, formatResetLabel } from '../../lib/format.js';
 import { barHistory } from '../../lib/history.js';
 import { summarizeHeadroom, type Headline } from '../../lib/headline.js';
+import { describeUsageAnomaly } from '../../lib/anomaly.js';
+import { PROVENANCE_LABEL } from '../../lib/provenance.js';
 
 const styles = {
   main: { fontFamily: 'system-ui, sans-serif', padding: '1rem', width: 260 },
@@ -46,6 +48,16 @@ const styles = {
     textDecoration: 'none',
   } as const,
   ratingPrompt: { fontSize: '0.75rem', color: '#4b5563', margin: '0 0 0.75rem' },
+  anomalyNote: {
+    fontSize: '0.75rem',
+    fontWeight: 500,
+    color: '#92400e',
+    background: '#fffbeb',
+    margin: '0 0 0.75rem',
+    padding: '0.5rem 0.6rem',
+    borderRadius: 6,
+    lineHeight: 1.35,
+  } as const,
 } as const;
 
 const USAGE_SETTINGS_URL = 'https://claude.ai/settings/usage';
@@ -143,6 +155,15 @@ export default function App() {
         { title: 'Weekly', bar: latest.weekly, history: weeklyHistory },
       ])
     : null;
+  // Independent of the forecast headline above — "is something unusual?" and "am I about to run
+  // out?" are different questions, answered separately rather than folded into one sentence.
+  // Pure function over already-loaded snapshot history; no daemon/network involved.
+  const anomalyNote = latest
+    ? describeUsageAnomaly([
+        { title: 'Session', bar: latest.session, history: sessionHistory },
+        { title: 'Weekly', bar: latest.weekly, history: weeklyHistory },
+      ])
+    : null;
 
   // Ask the background worker for a fresh /usage snapshot every time the popup opens, rather
   // than showing whatever happened to be captured last (which, before the background poll
@@ -184,6 +205,11 @@ export default function App() {
         <>
           {/* Only when something needs attention — "all clear" just repeats what the bars show. */}
           {headline && headline.tone !== 'ok' && <HeadlineBanner headline={headline} />}
+          {anomalyNote && (
+            <p role="status" style={styles.anomalyNote} title={PROVENANCE_LABEL.derived}>
+              ⚠ {anomalyNote}
+            </p>
+          )}
           {showRating && (
             <p style={styles.ratingPrompt}>
               Glad this caught it early —{' '}

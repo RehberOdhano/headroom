@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { Hono } from 'hono';
@@ -10,47 +11,15 @@ import {
   type CcusageOptions,
 } from './adapters/ccusage.js';
 import { aggregateByModel } from './aggregate.js';
-import { exportSessionMarkdown, findKnownProjectDirs, searchSessions } from './adapters/session-log.js';
-import {
-  findClaudeMdFiles,
-  isValidProjectDir,
-  readClaudeConfigSnapshot,
-  readClaudeMdContent,
-  removePermissionRule,
-  writeAgentModel,
-  writeClaudeMdContent,
-  writePermissionRule,
-} from './adapters/claude-config.js';
-import { canCreateNewProjectDir, runBootstrap } from './adapters/bootstrap.js';
-import { detectExistingProject } from './adapters/project-detect.js';
+import { exportSessionMarkdown, findKnownProjectDirs, findSubagentSummaries, searchSessions } from './adapters/session-log.js';
 import { forbiddenOrigin, isPaired, markPaired, requireAuth } from './auth.js';
-import type { BootstrapDocumentEncoding, BootstrapMode, PermissionEffect } from '@headroom/shared';
 import type { SessionWatcher } from './watcher.js';
 
-const PERMISSION_EFFECTS = ['allow', 'ask', 'deny'] as const;
-
-function isPermissionEffect(value: unknown): value is PermissionEffect {
-  return typeof value === 'string' && (PERMISSION_EFFECTS as readonly string[]).includes(value);
-}
-
-const BOOTSTRAP_MODES = ['create', 'existing'] as const;
-
-function isBootstrapMode(value: unknown): value is BootstrapMode {
-  return typeof value === 'string' && (BOOTSTRAP_MODES as readonly string[]).includes(value);
-}
-
-function isBootstrapDocument(
-  value: unknown,
-): value is { filename: string; content: string; encoding: BootstrapDocumentEncoding } | null {
-  if (value === null || value === undefined) return true;
-  if (typeof value !== 'object') return false;
-  const candidate = value as { filename?: unknown; content?: unknown; encoding?: unknown };
-  return (
-    typeof candidate.filename === 'string' &&
-    typeof candidate.content === 'string' &&
-    (candidate.encoding === 'utf8' || candidate.encoding === 'base64')
-  );
-}
+// Same createRequire pattern as service-install.ts — resolves to the real package.json one
+// level up from wherever this file ends up running from (`src/` in dev, `dist/` once built;
+// package.json ships alongside `dist/` either way, see root package's own CLAUDE.md).
+const require = createRequire(import.meta.url);
+const DAEMON_VERSION = (require('../package.json') as { version: string }).version;
 
 const AGGREGATE_KINDS = ['project', 'day', 'model'] as const;
 type AggregateKind = (typeof AGGREGATE_KINDS)[number];
@@ -92,7 +61,12 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   }
 
-  app.get('/health', (c) => c.json({ ok: true }));
+  // `version` lets a diagnostics view show which daemon build is actually running without a
+  // separate route; added as a plain extra field rather than a zod-validated schema, since
+  // nothing has ever parsed /health's body before now (callers only checked `response.ok`) — an
+  // older daemon simply omits the key, which the client reads defensively (see
+  // background.ts's checkDaemonHealth).
+  app.get('/health', (c) => c.json({ ok: true, version: DAEMON_VERSION }));
 
   // Unauthenticated by design — this is how the extension gets the token in the first place —
   // but still Origin-scheme-gated (forbiddenOrigin) and single-use (isPaired/markPaired), so it
@@ -135,6 +109,13 @@ export function createApp(options: CreateAppOptions = {}) {
     const markdown = exportSessionMarkdown(claudeConfigDir, c.req.param('id'), { includeToolCalls });
     if (markdown === null) return c.json({ error: 'not_found' }, 404);
     return c.text(markdown, 200, { 'Content-Type': 'text/markdown; charset=utf-8' });
+  });
+
+  // Read-only; reports each subagent's own tokens entirely independently of /sessions' own
+  // ccusage-derived totals — see findSubagentSummaries' doc comment on why these numbers are
+  // never merged into or added onto that total.
+  app.get('/sessions/:id/subagents', (c) => {
+    return c.json({ subagents: findSubagentSummaries(claudeConfigDir, c.req.param('id')) });
   });
 
   app.get('/search', (c) => {
@@ -180,171 +161,6 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.get('/config/projects', (c) => c.json({ projects: findKnownProjectDirs(claudeConfigDir) }));
-
-  app.get('/config', (c) => {
-    const projectDir = c.req.query('projectDir');
-    if (projectDir && !isValidProjectDir(projectDir)) {
-      return c.json({ error: 'invalid_query', message: '?projectDir must be an existing absolute directory' }, 400);
-    }
-    return c.json(readClaudeConfigSnapshot(projectDir ? { claudeConfigDir, projectDir } : { claudeConfigDir }));
-  });
-
-  app.get('/config/claude-md', (c) => {
-    const projectDir = c.req.query('projectDir');
-    if (!projectDir) return c.json({ error: 'invalid_query', message: '?projectDir is required' }, 400);
-    if (!isValidProjectDir(projectDir)) {
-      return c.json({ error: 'invalid_query', message: '?projectDir must be an existing absolute directory' }, 400);
-    }
-    return c.json({ files: findClaudeMdFiles(projectDir) });
-  });
-
-  app.get('/config/claude-md/content', (c) => {
-    const projectDir = c.req.query('projectDir');
-    const filePath = c.req.query('path');
-    if (!projectDir || !filePath) {
-      return c.json({ error: 'invalid_query', message: '?projectDir and ?path are required' }, 400);
-    }
-    if (!isValidProjectDir(projectDir)) {
-      return c.json({ error: 'invalid_query', message: '?projectDir must be an existing absolute directory' }, 400);
-    }
-    const content = readClaudeMdContent(projectDir, filePath);
-    if (content === null) return c.json({ error: 'not_found' }, 404);
-    return c.json({ content });
-  });
-
-  app.put('/config/claude-md/content', async (c) => {
-    const body = await c.req.json().catch(() => null);
-    const projectDir = body?.projectDir;
-    const filePath = body?.path;
-    const content = body?.content;
-    if (typeof projectDir !== 'string' || typeof filePath !== 'string' || typeof content !== 'string') {
-      return c.json({ error: 'invalid_body', message: 'projectDir, path, and content are required' }, 400);
-    }
-    if (!isValidProjectDir(projectDir)) {
-      return c.json({ error: 'invalid_body', message: 'projectDir must be an existing absolute directory' }, 400);
-    }
-    const ok = writeClaudeMdContent(projectDir, filePath, content);
-    if (!ok) return c.json({ error: 'not_found' }, 404);
-    return c.json({ content });
-  });
-
-  app.put('/config/agents/model', async (c) => {
-    const body = await c.req.json().catch(() => null);
-    const projectDir = body?.projectDir;
-    const filePath = body?.path;
-    const model = body?.model;
-    if (typeof projectDir !== 'string' || typeof filePath !== 'string' || typeof model !== 'string' || !model.trim()) {
-      return c.json({ error: 'invalid_body', message: 'projectDir, path, and a non-empty model are required' }, 400);
-    }
-    if (!isValidProjectDir(projectDir)) {
-      return c.json({ error: 'invalid_body', message: 'projectDir must be an existing absolute directory' }, 400);
-    }
-    const updated = writeAgentModel({ projectDir, requestedPath: filePath, model: model.trim() });
-    if (!updated) return c.json({ error: 'not_found' }, 404);
-    return c.json(updated);
-  });
-
-  app.post('/config/permissions', async (c) => {
-    const body = await c.req.json().catch(() => null);
-    const projectDir = body?.projectDir;
-    const pattern = body?.pattern;
-    const effect = body?.effect;
-    if (typeof projectDir !== 'string' || typeof pattern !== 'string' || !isPermissionEffect(effect)) {
-      return c.json({ error: 'invalid_body', message: 'projectDir, pattern, and effect are required' }, 400);
-    }
-    if (!isValidProjectDir(projectDir)) {
-      return c.json({ error: 'invalid_body', message: 'projectDir must be an existing absolute directory' }, 400);
-    }
-    return c.json(writePermissionRule({ projectDir, pattern, effect }));
-  });
-
-  app.delete('/config/permissions', async (c) => {
-    const body = await c.req.json().catch(() => null);
-    const projectDir = body?.projectDir;
-    const pattern = body?.pattern;
-    const effect = body?.effect;
-    if (typeof projectDir !== 'string' || typeof pattern !== 'string' || !isPermissionEffect(effect)) {
-      return c.json({ error: 'invalid_body', message: 'projectDir, pattern, and effect are required' }, 400);
-    }
-    if (!isValidProjectDir(projectDir)) {
-      return c.json({ error: 'invalid_body', message: 'projectDir must be an existing absolute directory' }, 400);
-    }
-    return c.json(removePermissionRule({ projectDir, pattern, effect }));
-  });
-
-  // Read-only, deterministic, no LLM — reads a handful of well-known config file shapes
-  // (package.json/pyproject.toml/go.mod, or a CLAUDE.md this tool wrote earlier) to prefill the
-  // "Use existing folder" form. Never writes anything.
-  app.get('/bootstrap/detect', (c) => {
-    const targetDir = c.req.query('targetDir');
-    if (!targetDir) return c.json({ error: 'invalid_query', message: '?targetDir is required' }, 400);
-    if (!isValidProjectDir(targetDir)) {
-      return c.json({ error: 'invalid_query', message: '?targetDir must be an existing absolute directory' }, 400);
-    }
-    return c.json(detectExistingProject(targetDir));
-  });
-
-  // No LLM. Writing files here is deterministic and offline, same as everywhere else in this
-  // adapter — the one exception is `runVerification: true`, which spawns the stack's real
-  // install/test commands and therefore does reach the network (npm/PyPI/Go module registries).
-  // That's a deliberate, explicit, opt-in carve-out of this daemon's usual "no network calls of
-  // its own" rule — see root CLAUDE.md and packages/daemon/CLAUDE.md.
-  app.post('/bootstrap', async (c) => {
-    const body = await c.req.json().catch(() => null);
-    const targetDir = body?.targetDir;
-    const mode = body?.mode;
-    const name = body?.name;
-    const description = body?.description ?? '';
-    const technologies = body?.technologies ?? [];
-    const document = body?.document ?? null;
-    const initGit = body?.initGit ?? false;
-    const runVerificationFlag = body?.runVerification ?? false;
-
-    if (
-      typeof targetDir !== 'string' ||
-      !isBootstrapMode(mode) ||
-      typeof name !== 'string' ||
-      !name.trim() ||
-      typeof description !== 'string' ||
-      !isBootstrapDocument(document) ||
-      !Array.isArray(technologies) ||
-      !technologies.every((tag: unknown): tag is string => typeof tag === 'string') ||
-      typeof initGit !== 'boolean' ||
-      typeof runVerificationFlag !== 'boolean'
-    ) {
-      return c.json(
-        {
-          error: 'invalid_body',
-          message:
-            'targetDir, mode, and a non-empty name are required; document, if present, must be {filename, content, encoding}; technologies, if present, must be an array of strings; initGit and runVerification must be booleans',
-        },
-        400,
-      );
-    }
-
-    if (mode === 'create' && !canCreateNewProjectDir(targetDir)) {
-      return c.json(
-        { error: 'invalid_body', message: 'targetDir must be an absolute path that does not already exist, with an existing parent directory' },
-        400,
-      );
-    }
-    if (mode === 'existing' && !isValidProjectDir(targetDir)) {
-      return c.json({ error: 'invalid_body', message: 'targetDir must be an existing absolute directory' }, 400);
-    }
-
-    return c.json(
-      await runBootstrap({
-        targetDir,
-        mode,
-        name: name.trim(),
-        description,
-        technologies,
-        document,
-        initGit,
-        runVerification: runVerificationFlag,
-      }),
-    );
-  });
 
   if (options.watcher) {
     const watcher = options.watcher;

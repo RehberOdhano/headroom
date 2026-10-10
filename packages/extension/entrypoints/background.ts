@@ -142,13 +142,22 @@ async function pairOrCheckHealth(): Promise<void> {
  */
 async function checkDaemonHealth(daemonUrl: string): Promise<void> {
   let ok: boolean;
+  let version: string | undefined;
   try {
     const response = await fetch(`${daemonUrl}/health`);
     ok = response.ok;
+    if (ok) {
+      // Defensive, not schema-validated: /health has never been parsed before now (callers only
+      // checked `response.ok`), and an older daemon simply won't have this field at all — leave
+      // `version` undefined rather than failing the whole health check over it.
+      const body: unknown = await response.json().catch(() => null);
+      const candidate = (body as { version?: unknown } | null)?.version;
+      if (typeof candidate === 'string') version = candidate;
+    }
   } catch {
     ok = false;
   }
-  const health: DaemonHealth = { ok, checkedAt: new Date().toISOString() };
+  const health: DaemonHealth = { ok, checkedAt: new Date().toISOString(), ...(version ? { version } : {}) };
   await db.meta.put({ key: 'daemonHealth', value: JSON.stringify(health) });
 }
 

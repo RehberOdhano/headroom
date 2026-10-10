@@ -8,6 +8,22 @@ import { z } from 'zod';
  * in this repo.
  */
 
+/** `GET /config/projects`'s response — real project paths read directly from session
+ *  transcripts' own `cwd` field (`findKnownProjectDirs`, packages/daemon/src/adapters/
+ *  session-log.ts). Despite the route's `/config/` prefix (a historical holdover from when it
+ *  backed the now-removed Guardrails project picker), this is plain session-log reading, used
+ *  today by Settings → Diagnostics' project count. */
+export const knownProjectSchema = z.object({
+  path: z.string(),
+  lastActivity: z.string().nullable(),
+});
+
+export const knownProjectsResponseSchema = z.object({
+  projects: z.array(knownProjectSchema),
+});
+
+export type KnownProject = z.infer<typeof knownProjectSchema>;
+
 const modelBreakdownSchema = z.object({
   cacheCreationTokens: z.number(),
   cacheReadTokens: z.number(),
@@ -88,6 +104,27 @@ export const daemonSearchResponseSchema = z.object({
   hasMore: z.boolean(),
 });
 
+/** `GET /sessions/:id/subagents` — see `packages/daemon/src/adapters/session-log.ts`'s
+ *  `SubagentSummary` doc comment for the double-counting caveat: `totalTokens` here is reported
+ *  entirely independently of ccusage's own session/project/model totals and must never be
+ *  presented as additive to them. */
+export const daemonSubagentSummarySchema = z.object({
+  agentId: z.string(),
+  agentType: z.string().nullable(),
+  description: z.string().nullable(),
+  toolUseId: z.string().nullable(),
+  model: z.string().nullable(),
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  cacheCreationTokens: z.number(),
+  cacheReadTokens: z.number(),
+  totalTokens: z.number(),
+});
+
+export const daemonSubagentsResponseSchema = z.object({
+  subagents: z.array(daemonSubagentSummarySchema),
+});
+
 /** `POST /pair`'s success body — the auto-pairing handshake (packages/daemon/src/app.ts,
  *  src/auth.ts) that hands the extension its token without a manual copy-paste. */
 export const daemonPairResponseSchema = z.object({
@@ -102,3 +139,5 @@ export type DaemonModelAggregate = z.infer<typeof modelBreakdownSchema>;
 export type DaemonSearchMatch = z.infer<typeof daemonSearchMatchSchema>;
 export type DaemonSearchResponse = z.infer<typeof daemonSearchResponseSchema>;
 export type DaemonPairResponse = z.infer<typeof daemonPairResponseSchema>;
+export type DaemonSubagentSummary = z.infer<typeof daemonSubagentSummarySchema>;
+export type DaemonSubagentsResponse = z.infer<typeof daemonSubagentsResponseSchema>;

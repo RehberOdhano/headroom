@@ -1,4 +1,4 @@
-import type { BurnRateForecast, LimitSnapshot } from '@headroom/shared';
+import type { BurnRateForecast, LimitSnapshot, SafePace } from '@headroom/shared';
 
 export interface ForecastMessage {
   message: string;
@@ -65,16 +65,18 @@ function formatHoursEarly(diffMs: number): string {
 }
 
 /**
- * "in 3h 14m", "in 12m", or "resetting now" for anything under a day out — a relative
- * countdown is genuinely the clearest way to read a short span. A day or more out (the weekly
- * bar's usual case), a countdown like "in 167h 50m" stops being readable at a glance, so this
- * switches to an absolute "Thu, 8:00 PM" instead (same `weekday, time` style
- * `describeForecast()` already uses for its own "reaches limit ~<when>" text, so the two read
- * consistently next to each other).
+ * "in 3h 14m", "in 12m", or "now" for anything under a day out — a relative countdown is
+ * genuinely the clearest way to read a short span. A day or more out (the weekly bar's usual
+ * case), a countdown like "in 167h 50m" stops being readable at a glance, so this switches to an
+ * absolute "Thu, 8:00 PM" instead (same `weekday, time` style `describeForecast()` already uses
+ * for its own "reaches limit ~<when>" text, so the two read consistently next to each other).
+ * Every branch returns a fragment meant to follow the word "resets" (every call site prepends
+ * it) — this must never be a standalone sentence like "resetting now", or it reads as the
+ * literal, doubled-up "resets resetting now".
  */
 export function formatResetLabel(resetsAt: string, now: Date = new Date()): string {
   const diffMs = new Date(resetsAt).getTime() - now.getTime();
-  if (diffMs <= 0) return 'resetting now';
+  if (diffMs <= 0) return 'now';
 
   const totalMinutes = Math.round(diffMs / 60_000);
   const hours = Math.floor(totalMinutes / 60);
@@ -91,6 +93,30 @@ export function formatResetLabel(resetsAt: string, now: Date = new Date()): stri
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+/** Rounds a comparative "pace above safe" percentage to the nearest 5 — it's a ratio of an
+ *  exact value and a fitted estimate, so single-percent precision would overstate how exact it
+ *  actually is. Anything that rounds down to 0 isn't worth a sentence. */
+function roundPaceComparisonCoarsely(value: number): number {
+  return Math.round(value / 5) * 5;
+}
+
+/**
+ * "Average usage should stay around 0.6%/hour or lower to last until reset." — deliberately
+ * never calls this "exact," even though the underlying arithmetic is (see `computeSafePace`'s
+ * doc comment): a hedged, approximate tone matches what a reader should actually take from it.
+ * Appends a comparison to the account's recently observed pace only when `computeSafePace`
+ * judged one worth making (medium/high-confidence forecast, meaningfully above the safe rate).
+ */
+export function describeSafePace(safePace: SafePace | null): string | null {
+  if (!safePace) return null;
+  const base = `Average usage should stay around ${formatPercent(safePace.safeHourlyRate)}%/hour or lower to last until reset.`;
+  if (safePace.recentPaceAboveSafePercent === null) return base;
+
+  const rounded = roundPaceComparisonCoarsely(safePace.recentPaceAboveSafePercent);
+  if (rounded <= 0) return base;
+  return `${base} Your recent pace is about ${rounded}% above that.`;
 }
 
 // `severity` is an open string per packages/shared's schema (only "normal"/"warning" observed

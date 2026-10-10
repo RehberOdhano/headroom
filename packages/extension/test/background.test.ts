@@ -306,6 +306,30 @@ describe('background', () => {
       });
     });
 
+    it('records the daemon-reported version when present', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ version: '0.2.1' }) } as Response);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: PAIR_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(async () => {
+        const health = await extensionMessenger.sendMessage('getDaemonHealth');
+        expect(health?.version).toBe('0.2.1');
+      });
+    });
+
+    it('leaves version undefined for an older daemon whose /health body omits it', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as Response);
+
+      await fakeBrowser.alarms.onAlarm.trigger({ name: PAIR_ALARM_NAME, scheduledTime: Date.now(), persistAcrossSessions: true });
+
+      await vi.waitFor(async () => {
+        const health = await extensionMessenger.sendMessage('getDaemonHealth');
+        expect(health?.ok).toBe(true);
+      });
+      const health = await extensionMessenger.sendMessage('getDaemonHealth');
+      expect(health?.version).toBeUndefined();
+    });
+
     it('records unreachable when the daemon cannot be reached', async () => {
       vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
 
@@ -722,6 +746,24 @@ describe('background', () => {
       expect(created).toHaveLength(1);
       expect(created[0]).toMatchObject({ title: expect.stringContaining('50%+') });
     });
+
+    it(
+      'reads "resets now", not the doubled "resets resetting now", in a threshold notification ' +
+        'once the reset time has passed — regression test for the real reachable notification path',
+      async () => {
+        const past = new Date(Date.now() - 60_000).toISOString();
+        await extensionMessenger.sendMessage('captured', {
+          endpoint: 'usage',
+          capturedAt: '2026-08-26T17:20:00Z',
+          raw: usageFixtureWithSessionPercent(85, past), // crosses the default 80% threshold
+        });
+
+        const created = Object.values(fakeBrowser.notifications.getAllCreateOptions());
+        expect(created).toHaveLength(1);
+        expect(created[0]!.message).toContain('resets now');
+        expect(created[0]!.message).not.toContain('resets resetting now');
+      },
+    );
 
     it('does not fire any alert when thresholds are configured empty', async () => {
       await extensionMessenger.sendMessage('updateSettings', { alertThresholds: [] });

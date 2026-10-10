@@ -5,6 +5,7 @@ import {
   daemonProjectDailyReportSchema,
   daemonSearchResponseSchema,
   daemonSessionsReportSchema,
+  daemonSubagentsResponseSchema,
 } from './schemas.js';
 
 // Representative shapes, not real conversation content — hand-authored rather than captured,
@@ -72,6 +73,52 @@ describe('daemonDailyReportSchema / daemonProjectDailyReportSchema', () => {
 describe('daemonModelAggregateResponseSchema', () => {
   it('parses a /aggregate?by=model response', () => {
     expect(daemonModelAggregateResponseSchema.safeParse({ models: [modelBreakdown] }).success).toBe(true);
+  });
+});
+
+describe('daemonSubagentsResponseSchema', () => {
+  it('parses a /sessions/:id/subagents response, including null agentType/description/toolUseId/model', () => {
+    const result = daemonSubagentsResponseSchema.safeParse({
+      subagents: [
+        {
+          agentId: 'test0001',
+          agentType: 'Explore',
+          description: 'Explore aggregate pipeline',
+          toolUseId: 'toolu_alpha0004',
+          model: 'claude-sonnet-5',
+          inputTokens: 60,
+          outputTokens: 25,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          totalTokens: 85,
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('parses a session with no subagents at all', () => {
+    expect(daemonSubagentsResponseSchema.safeParse({ subagents: [] }).success).toBe(true);
+  });
+
+  it('parses a subagent whose .meta.json was missing or malformed — all-null metadata, not a reject', () => {
+    const result = daemonSubagentsResponseSchema.safeParse({
+      subagents: [
+        {
+          agentId: 'test0002',
+          agentType: null,
+          description: null,
+          toolUseId: null,
+          model: null,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          totalTokens: 0,
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
   });
 });
 
