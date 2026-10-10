@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { BurnRateForecast } from '@headroom/shared';
+import type { BurnRateForecast, SafePace } from '@headroom/shared';
 import {
   barColor,
   describeForecast,
+  describeSafePace,
   describeSource,
   formatCcusageDate,
   formatLastActivity,
@@ -25,8 +26,9 @@ describe('formatResetLabel', () => {
     expect(formatResetLabel('2026-08-29T12:12:00Z', now)).toBe('in 12m');
   });
 
-  it('reports resetting now once the reset time has passed', () => {
-    expect(formatResetLabel('2026-08-29T11:00:00Z', now)).toBe('resetting now');
+  it('reports "now" once the reset time has passed — a fragment, not "resetting now", since ' +
+    'every call site prepends its own "resets " and would otherwise read "resets resetting now"', () => {
+    expect(formatResetLabel('2026-08-29T11:00:00Z', now)).toBe('now');
   });
 
   it('still uses the relative form right up to (but not past) the 24h boundary', () => {
@@ -37,13 +39,47 @@ describe('formatResetLabel', () => {
     // 2026-08-29 is a Saturday; a week out lands on the following Saturday.
     const label = formatResetLabel('2026-09-05T20:00:00Z', now);
     expect(label).not.toMatch(/^in /);
-    expect(label).not.toBe('resetting now');
+    expect(label).not.toBe('now');
     expect(label).toContain(':'); // a time is present, in whatever the runtime locale's format is
   });
 
   it('formats the 24h boundary itself as absolute, not "in 24h"', () => {
     const label = formatResetLabel('2026-08-30T12:00:00Z', now);
     expect(label).not.toMatch(/^in /);
+  });
+});
+
+describe('describeSafePace', () => {
+  const safePace = (overrides: Partial<SafePace> = {}): SafePace => ({
+    safeHourlyRate: 0.6,
+    recentPaceAboveSafePercent: null,
+    ...overrides,
+  });
+
+  it('returns null when there is nothing to report', () => {
+    expect(describeSafePace(null)).toBeNull();
+  });
+
+  it('never calls the number "exact" — hedged wording even though the arithmetic is exact', () => {
+    const text = describeSafePace(safePace())!;
+    expect(text).toContain('Average usage should stay around 0.6%/hour or lower to last until reset.');
+    expect(text.toLowerCase()).not.toContain('exact');
+  });
+
+  it('omits the comparison clause entirely when there is nothing to compare', () => {
+    const text = describeSafePace(safePace({ recentPaceAboveSafePercent: null }))!;
+    expect(text).not.toContain('Your recent pace');
+  });
+
+  it('appends the comparison, rounded to the nearest 5, when one is present', () => {
+    const text = describeSafePace(safePace({ recentPaceAboveSafePercent: 38 }))!;
+    expect(text).toContain('Your recent pace is about 40% above that.');
+  });
+
+  it('rounds a small comparison down to nothing rather than showing false precision', () => {
+    // 2% above rounds to 0 at the nearest-5 resolution — not worth a sentence.
+    const text = describeSafePace(safePace({ recentPaceAboveSafePercent: 2 }))!;
+    expect(text).not.toContain('Your recent pace');
   });
 });
 

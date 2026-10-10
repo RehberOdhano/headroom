@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import type { DaemonSessionsReport } from '@headroom/shared';
+import type { DaemonSessionsReport, DaemonSubagentSummary } from '@headroom/shared';
 import { estimateTokensPerPercent, estimateWeeklyCliSplit } from '@headroom/shared';
 import { db } from '../../../lib/db.js';
 import {
@@ -8,12 +8,14 @@ import {
   getDaemonByProject,
   getDaemonDaily,
   getDaemonSessions,
+  getDaemonSessionSubagents,
   type DaemonResult,
 } from '../../../lib/daemon-client.js';
 import { barHistory } from '../../../lib/history.js';
 import { formatCcusageDate, formatLastActivity, formatTokens } from '../../../lib/format.js';
 import { downloadCsv } from '../../../lib/downloads.js';
-import { matchesQuery } from '../../../lib/guardrails.js';
+import { matchesQuery } from '../../../lib/filter.js';
+import { PROVENANCE_LABEL } from '../../../lib/provenance.js';
 import type { Settings } from '../../../lib/protocol.js';
 import { WeeklyCliSplitChart } from './WeeklyCliSplitChart.tsx';
 
@@ -76,6 +78,25 @@ export function CliOverview({ settings }: { settings: Settings }) {
   const [sessions, setSessions] = useState<DaemonResult<DaemonSessionsReport> | null>(null);
   const [projectFilter, setProjectFilter] = useState('');
   const [sessionFilter, setSessionFilter] = useState('');
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+  const [subagentsBySession, setSubagentsBySession] = useState<Record<string, DaemonSubagentSummary[] | 'loading' | 'unavailable'>>({});
+
+  // Lazy, per-session — a subagent lookup is its own daemon call, so it only happens once a
+  // session row is actually expanded, never for the whole table up front.
+  async function toggleSessionExpanded(sessionId: string) {
+    if (expandedSessionId === sessionId) {
+      setExpandedSessionId(null);
+      return;
+    }
+    setExpandedSessionId(sessionId);
+    if (subagentsBySession[sessionId]) return;
+    setSubagentsBySession((current) => ({ ...current, [sessionId]: 'loading' }));
+    const result = await getDaemonSessionSubagents(settings, sessionId);
+    // A failed fetch (e.g. an older paired daemon that predates this route) must not collapse to
+    // the same `[]` a genuinely zero-subagent session renders as — that would silently misreport
+    // "confirmed no subagent activity" when the truth is "couldn't check."
+    setSubagentsBySession((current) => ({ ...current, [sessionId]: result.ok ? result.data.subagents : 'unavailable' }));
+  }
 
   useEffect(() => {
     const since = formatCcusageDate(new Date(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000));
@@ -112,6 +133,12 @@ export function CliOverview({ settings }: { settings: Settings }) {
     ? [...byModel.data.models].sort((a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens))
     : [];
   const sessionRows = sessions?.ok ? [...sessions.data.sessions].sort((a, b) => b.totalTokens - a.totalTokens) : [];
+  // Each table's own fetch can fail independently of the others — a failure must render as its
+  // own section-level error, not silently fall back to the same empty table a genuinely-zero
+  // result renders as. One section failing doesn't hide data the others loaded successfully.
+  const byProjectFailed = byProject && !byProject.ok;
+  const byModelFailed = byModel && !byModel.ok;
+  const sessionsFailed = sessions && !sessions.ok;
 
   // Filtered down for both display and CSV export — a long table (many projects, or a heavy CLI
   // user's many sessions) is otherwise nothing but scrolling to find one entry. Models aren't
@@ -123,12 +150,12 @@ export function CliOverview({ settings }: { settings: Settings }) {
     <>
       {daily?.ok && (
         <div className="stat-grid">
-          <div className="stat-card">
+          <div className="stat-card" title={PROVENANCE_LABEL.local}>
             <div className="stat-value">{formatTokens(daily.data.totals.totalTokens)}</div>
             <div className="stat-label">tokens</div>
           </div>
           {reconciliation && (
-            <div className="stat-card">
+            <div className="stat-card" title={PROVENANCE_LABEL.derived}>
               <div className="stat-value">~{formatTokens(Math.round(reconciliation.tokensPerPercent))}</div>
               <div className="stat-label">tokens / 1% weekly ({reconciliation.confidence})</div>
             </div>
@@ -158,6 +185,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
         </>
       )}
 
+      {byProjectFailed && <p className="error-text">{byProject.message}</p>}
       {projectRows.length > 0 && (
         <>
           <div className="card-header">
@@ -215,6 +243,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
         </>
       )}
 
+      {byModelFailed && <p className="error-text">{byModel.message}</p>}
       {modelRows.length > 0 && (
         <>
           <div className="card-header">
@@ -263,6 +292,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
         </>
       )}
 
+      {sessionsFailed && <p className="error-text">{sessions.message}</p>}
       {sessionRows.length > 0 && (
         <>
           <div className="card-header">
@@ -297,16 +327,59 @@ export function CliOverview({ settings }: { settings: Settings }) {
                     <th>Project</th>
                     <th>Last active</th>
                     <th>Tokens</th>
+                    <th>Agents</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSessionRows.map((session) => (
-                    <tr key={session.sessionId}>
-                      <td>{session.projectPath}</td>
-                      <td>{formatLastActivity(session.lastActivity)}</td>
-                      <td>{formatTokens(session.totalTokens)}</td>
-                    </tr>
-                  ))}
+                  {filteredSessionRows.map((session) => {
+                    const subagents = subagentsBySession[session.sessionId];
+                    return (
+                      <Fragment key={session.sessionId}>
+                        <tr>
+                          <td>{session.projectPath}</td>
+                          <td>{formatLastActivity(session.lastActivity)}</td>
+                          <td>{formatTokens(session.totalTokens)}</td>
+                          <td>
+                            <button type="button" className="btn" onClick={() => void toggleSessionExpanded(session.sessionId)}>
+                              {expandedSessionId === session.sessionId ? 'Hide' : 'Show'}
+                            </button>
+                          </td>
+                        </tr>
+                        {expandedSessionId === session.sessionId && (
+                          <tr>
+                            <td colSpan={4}>
+                              {subagents === undefined || subagents === 'loading' ? (
+                                <p className="hint">Loading subagent activity…</p>
+                              ) : subagents === 'unavailable' ? (
+                                <p className="hint">
+                                  Couldn&rsquo;t check subagent activity for this session — the paired daemon may be
+                                  an older version that doesn&rsquo;t support it yet.
+                                </p>
+                              ) : subagents.length === 0 ? (
+                                <p className="hint">No subagent activity observed for this session.</p>
+                              ) : (
+                                <>
+                                  <p className="hint">
+                                    Subagent activity, tracked separately from the session total above — never added to
+                                    it (we can&rsquo;t confirm whether that total already includes it).
+                                  </p>
+                                  <ul>
+                                    {subagents.map((agent) => (
+                                      <li key={agent.agentId}>
+                                        {agent.agentType ?? 'subagent'}
+                                        {agent.description ? ` — ${agent.description}` : ''}: {formatTokens(agent.totalTokens)}
+                                        {agent.model ? ` (${agent.model})` : ''}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -317,6 +390,9 @@ export function CliOverview({ settings }: { settings: Settings }) {
       {projectRows.length === 0 &&
         modelRows.length === 0 &&
         sessionRows.length === 0 &&
+        !byProjectFailed &&
+        !byModelFailed &&
+        !sessionsFailed &&
         (!daily?.ok || daily.data.totals.totalTokens === 0) && (
           <p className="hint">No CLI usage recorded yet in the last {RECENT_DAYS} days.</p>
         )}

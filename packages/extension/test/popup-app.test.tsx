@@ -118,6 +118,45 @@ describe('popup App', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
+  it(
+    'reads "resets now", not the doubled "resets resetting now", once the reset time has ' +
+      'passed — regression test for the real site the bug was originally reported from',
+    async () => {
+      const past = new Date(Date.now() - 60_000).toISOString();
+      await db.limitSnapshots.add({
+        capturedAt: new Date().toISOString(),
+        source: 'usage',
+        session: { percent: 42, resetsAt: past, severity: 'normal', isActive: true },
+        weekly: null,
+      });
+
+      render(<App />);
+
+      expect(await screen.findByText(/resets now/)).toBeTruthy();
+      expect(screen.queryByText(/resets resetting now/)).toBeNull();
+    },
+  );
+
+  it('shows an "is something unusual?" note independent of the forecast headline', async () => {
+    const now = new Date();
+    const hoursAgo = (h: number) => new Date(now.getTime() - h * 60 * 60 * 1000).toISOString();
+    const resetsAt = new Date(now.getTime() + 20 * 60 * 60 * 1000).toISOString();
+    const weeklyBar = (percent: number) => ({ percent, resetsAt, severity: 'normal', isActive: true });
+    await db.limitSnapshots.bulkAdd([
+      { capturedAt: hoursAgo(6), source: 'usage', session: null, weekly: weeklyBar(10) },
+      { capturedAt: hoursAgo(5), source: 'usage', session: null, weekly: weeklyBar(15) },
+      { capturedAt: hoursAgo(4), source: 'usage', session: null, weekly: weeklyBar(5) },
+      { capturedAt: hoursAgo(3), source: 'usage', session: null, weekly: weeklyBar(10) },
+      { capturedAt: hoursAgo(2), source: 'usage', session: null, weekly: weeklyBar(2) },
+      { capturedAt: hoursAgo(1), source: 'usage', session: null, weekly: weeklyBar(13) },
+      { capturedAt: now.toISOString(), source: 'usage', session: null, weekly: weeklyBar(24) },
+    ]);
+
+    render(<App />);
+
+    expect(await screen.findByText(/Weekly usage is rising faster than its recent pattern/)).toBeTruthy();
+  });
+
   it('flags a bar that is already at its limit', async () => {
     await db.limitSnapshots.add({
       capturedAt: new Date().toISOString(),

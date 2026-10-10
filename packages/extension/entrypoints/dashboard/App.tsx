@@ -1,14 +1,22 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Fragment, useState } from 'react';
-import { forecastBurnRate, type TimedPercent } from '@headroom/shared';
+import { computeSafePace, detectBurnRateAnomaly, forecastBurnRate, type TimedPercent } from '@headroom/shared';
 import { db, type LimitSnapshotRecord } from '../../lib/db.js';
-import { barColor, describeForecast, describeSource, formatPercent, formatResetLabel } from '../../lib/format.js';
+import {
+  barColor,
+  describeForecast,
+  describeSafePace,
+  describeSource,
+  formatPercent,
+  formatResetLabel,
+} from '../../lib/format.js';
 import { sparklinePointsAttr, toSparklinePoints } from '../../lib/chart.js';
 import { barHistory, withinWindow, type BarKey } from '../../lib/history.js';
+import { formatUpdatedAgo, PROVENANCE_LABEL } from '../../lib/provenance.js';
 import { DEFAULT_SETTINGS, getSettings } from '../../lib/settings.js';
+import { formatUsageInspectorFindings, loadUsageInspector } from '../../lib/usage-inspector.js';
+import type { Settings } from '../../lib/protocol.js';
 import { CliTab, SearchTab } from './Cli.tsx';
-import { ConfigTab } from './Config.tsx';
-import { NewProjectTab } from './NewProject.tsx';
 import { ReleaseNotesBanner } from './UsageExtras.tsx';
 
 const WINDOWS = {
@@ -18,12 +26,19 @@ const WINDOWS = {
 } as const;
 type WindowKey = keyof typeof WINDOWS;
 
+// Labels reflect the user's own mental model (Overview / Activity / Sessions) rather than
+// implementation history (`charts`/`cli`/`search` as literal tab keys, kept as-is since they're
+// also DOM ids and test selectors — only the user-visible label changed). Usage Inspector's
+// trigger-and-result stays inside Overview rather than splitting across Overview/Activity as a
+// first pass at this IA sketched — a self-contained "click Inspect, see the answer right there"
+// beat passing state between tabs for a result that's only ever about one specific bar.
+// Guardrails and New Project (Claude Code configuration management / project scaffolding) were
+// removed from this product in the 0.3.0 split — Headroom is usage-observability only now; see
+// git history for that implementation if it's ever extracted into its own product.
 const TABS = [
-  { key: 'charts', label: 'Usage & Forecast', advanced: false, needsDaemon: false },
-  { key: 'cli', label: 'CLI Attribution', advanced: false, needsDaemon: false },
-  { key: 'search', label: 'Search', advanced: false, needsDaemon: true },
-  { key: 'config', label: 'Guardrails', advanced: true, needsDaemon: true },
-  { key: 'new-project', label: 'New Project', advanced: true, needsDaemon: true },
+  { key: 'charts', label: 'Overview', needsDaemon: false },
+  { key: 'cli', label: 'Activity', needsDaemon: false },
+  { key: 'search', label: 'Sessions', needsDaemon: true },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -130,21 +145,69 @@ function UsageCreditsSection({ snapshots }: { snapshots: LimitSnapshotRecord[] }
   );
 }
 
+/**
+ * Loaded on demand (click "Inspect →"), never automatically — this is the one place the Usage &
+ * Forecast tab reaches the daemon at all, and only when both an anomaly fired AND someone asked
+ * to see why. Window is the anomalous run's own start (`anomaly.runStartedAt`) through now.
+ */
+function UsageInspectorPanel({ windowStart, settings }: { windowStart: string; settings: Settings }) {
+  const [expanded, setExpanded] = useState(false);
+  // A fetch failure (daemon unreachable, token rejected, etc.) is kept distinct from a loaded,
+  // genuinely-empty result — both coercing to `[]` would render the same silent, blank panel,
+  // indistinguishable from the inspector simply being broken.
+  const [lines, setLines] = useState<string[] | 'loading' | 'unavailable'>('loading');
+
+  async function inspect() {
+    setExpanded(true);
+    const result = await loadUsageInspector(settings, windowStart, new Date().toISOString());
+    setLines(result ? formatUsageInspectorFindings(result) : 'unavailable');
+  }
+
+  if (!expanded) {
+    return (
+      <button type="button" className="btn" onClick={() => void inspect()}>
+        Inspect →
+      </button>
+    );
+  }
+
+  return (
+    <div title={PROVENANCE_LABEL.derived}>
+      {lines === 'loading' ? (
+        <p className="hint">Looking at local activity since {new Date(windowStart).toLocaleString()}…</p>
+      ) : lines === 'unavailable' ? (
+        <p className="hint">Couldn&rsquo;t reach the daemon to look up local activity for this period.</p>
+      ) : (
+        lines.map((line) => (
+          <p key={line} className="hint">
+            {line}
+          </p>
+        ))
+      )}
+    </div>
+  );
+}
+
 function BarSection({
   title,
   barKey,
   snapshots,
   thresholds,
+  settings,
 }: {
   title: string;
   barKey: BarKey;
   snapshots: LimitSnapshotRecord[];
   thresholds: number[];
+  settings: Settings | undefined;
 }) {
   const series = barHistory(snapshots, barKey);
   const latestSnapshot = [...snapshots].reverse().find((s) => s[barKey]) ?? null;
   const latestBar = latestSnapshot?.[barKey] ?? null;
-  const forecast = latestBar ? describeForecast(forecastBurnRate(series), latestBar.resetsAt, latestBar.percent) : null;
+  const burnRate = forecastBurnRate(series);
+  const forecast = latestBar ? describeForecast(burnRate, latestBar.resetsAt, latestBar.percent) : null;
+  const safePaceText = latestBar ? describeSafePace(computeSafePace(latestBar.percent, latestBar.resetsAt, burnRate)) : null;
+  const anomaly = latestBar ? detectBurnRateAnomaly(series, new Date(), latestBar.resetsAt) : null;
   const low = series.length > 0 ? Math.min(...series.map((p) => p.percent)) : null;
   const high = series.length > 0 ? Math.max(...series.map((p) => p.percent)) : null;
 
@@ -161,7 +224,7 @@ function BarSection({
 
       {latestBar && (
         <div className="progress-row">
-          <span className="progress-percent" style={{ color: barColor(latestBar.severity) }}>
+          <span className="progress-percent" title={PROVENANCE_LABEL.server} style={{ color: barColor(latestBar.severity) }}>
             {formatPercent(latestBar.percent)}%
           </span>
           <div className="progress-track">
@@ -180,10 +243,12 @@ function BarSection({
         </div>
       )}
 
+      {latestSnapshot && <p className="hint">Updated {formatUpdatedAgo(latestSnapshot.capturedAt)}</p>}
+
       <Sparkline series={series} thresholds={thresholds} />
 
       {latestBar && (
-        <p className={`forecast-line ${forecast?.atRisk ? 'at-risk' : 'on-track'}`}>
+        <p className={`forecast-line ${forecast?.atRisk ? 'at-risk' : 'on-track'}`} title={PROVENANCE_LABEL.derived}>
           {forecast ? (
             <>
               {forecast.atRisk ? '⚠ ' : ''}
@@ -194,13 +259,30 @@ function BarSection({
           )}
         </p>
       )}
+
+      {safePaceText && (
+        <p className="hint" title={PROVENANCE_LABEL.derived}>
+          {safePaceText}
+        </p>
+      )}
+
+      {anomaly?.isAnomalous && (
+        <>
+          <p className="forecast-line at-risk" title={PROVENANCE_LABEL.derived}>
+            ⚠ Usage is rising faster than its recent pattern.
+            {anomaly.baselineMaturity === 'preliminary' ? ' (early pattern — based on limited history)' : ''}
+          </p>
+          {settings?.daemonUrl && settings?.daemonToken && (
+            <UsageInspectorPanel windowStart={anomaly.runStartedAt} settings={settings} />
+          )}
+        </>
+      )}
     </section>
   );
 }
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('charts');
-  const [pendingGuardrailsProjectDir, setPendingGuardrailsProjectDir] = useState<string | null>(null);
   const [windowKey, setWindowKey] = useState<WindowKey>('7d');
   // Live (Dexie broadcasts writes across extension contexts), so a daemon that pairs while this
   // page is open reveals the CLI tabs without a reload.
@@ -245,13 +327,8 @@ export default function App() {
       <ReleaseNotesBanner />
 
       <nav className="tabs" role="tablist" aria-label="Dashboard sections" onKeyDown={onTabKeyDown}>
-        {visibleTabs.map((tab, index) => (
+        {visibleTabs.map((tab) => (
           <Fragment key={tab.key}>
-            {tab.advanced && !visibleTabs[index - 1]?.advanced && (
-              <span className="tabs-divider" aria-hidden="true">
-                Advanced
-              </span>
-            )}
             <button
               type="button"
               role="tab"
@@ -285,8 +362,8 @@ export default function App() {
               <p className="hint">No snapshots captured in this window yet.</p>
             ) : (
               <div className="grid-2">
-                <BarSection title="Session (5h)" barKey="session" snapshots={windowed} thresholds={alertThresholds} />
-                <BarSection title="Weekly" barKey="weekly" snapshots={windowed} thresholds={alertThresholds} />
+                <BarSection title="Session (5h)" barKey="session" snapshots={windowed} thresholds={alertThresholds} settings={settings} />
+                <BarSection title="Weekly" barKey="weekly" snapshots={windowed} thresholds={alertThresholds} settings={settings} />
               </div>
             )}
 
@@ -307,27 +384,9 @@ export default function App() {
       </div>
 
       {daemonConnected && (
-        <>
-          <div hidden={activeTab !== 'search'} role="tabpanel" id="panel-search" aria-labelledby="tab-search">
-            <SearchTab />
-          </div>
-
-          <div hidden={activeTab !== 'config'} role="tabpanel" id="panel-config" aria-labelledby="tab-config">
-            <ConfigTab
-              pendingProjectDir={pendingGuardrailsProjectDir}
-              onPendingProjectDirApplied={() => setPendingGuardrailsProjectDir(null)}
-            />
-          </div>
-
-          <div hidden={activeTab !== 'new-project'} role="tabpanel" id="panel-new-project" aria-labelledby="tab-new-project">
-            <NewProjectTab
-              onProjectReady={(targetDir) => {
-                setPendingGuardrailsProjectDir(targetDir);
-                setActiveTab('config');
-              }}
-            />
-          </div>
-        </>
+        <div hidden={activeTab !== 'search'} role="tabpanel" id="panel-search" aria-labelledby="tab-search">
+          <SearchTab />
+        </div>
       )}
     </main>
   );

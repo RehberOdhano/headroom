@@ -236,7 +236,7 @@
   <header class="masthead">
     <p class="eyebrow">Privacy Policy</p>
     <h1 class="heading">Claude Usage Companion</h1>
-    <p class="meta"><strong>Effective:</strong> September 27, 2026 &nbsp;·&nbsp; <strong>Applies to:</strong> the browser extension and its optional local daemon &nbsp;·&nbsp; <strong>Version:</strong> 0.2.0</p>
+    <p class="meta"><strong>Effective:</strong> October 10, 2026 &nbsp;·&nbsp; <strong>Applies to:</strong> the browser extension and its optional local daemon &nbsp;·&nbsp; <strong>Version:</strong> 0.3.0</p>
     <div class="summary">
       <p><strong>In short:</strong> nothing you do in this extension leaves your computer. There
       is no account, no server, no analytics, and no copy of your conversations anywhere but
@@ -310,38 +310,15 @@
         If you separately install the daemon (a manual, opt-in step — it never installs itself),
         it reads Claude Code's session logs directly from your own disk
         (<code class="mono">~/.claude/projects/**/*.jsonl</code>) to show CLI token usage
-        and let you search your own past sessions.
-      </p>
-      <p>
-        The daemon also powers the extension's "Guardrails" view: for a project you pick, it
-        reads your Claude Code permission rules, hooks, and skills (from
-        <code class="mono">~/.claude/settings.json</code>, the project's own
-        <code class="mono">.claude/settings.json</code>, and
-        <code class="mono">.claude/settings.local.json</code>) and any
-        <code class="mono">CLAUDE.md</code> files in that project, so you can see them without
-        opening a terminal or editor. Two actions there write back to disk, both only when you
-        explicitly click something — adding or removing a permission-rule override (always to
-        the project's own <code class="mono">.claude/settings.local.json</code>, never the
-        shared, committed <code class="mono">settings.json</code>) and saving an edit you make to
-        a <code class="mono">CLAUDE.md</code> file. Both a read and a write here stay a local
-        file operation on your own machine — nothing is ever sent anywhere.
-      </p>
-      <p>
-        The daemon also powers "New Project", which scaffolds a new folder (or fills in an
-        existing one) with starter files for the stack you pick, based only on file/dependency
-        patterns it recognizes — never by reading the content of any document you upload, which
-        is used only to copy into the generated project, not interpreted. This writes new files
-        to the folder you choose, and can optionally run <code class="mono">git init</code>. If
-        you turn on its "verify" step, it runs that stack's own real install/build/test commands
-        (for example <code class="mono">pnpm install</code>, <code class="mono">uv sync</code>,
-        <code class="mono">go build</code>) so those specific commands do reach the network — on
-        your explicit, one-time request, the same as if you'd typed them into a terminal
-        yourself, never automatically and never for any other purpose.
+        (including, for a session you expand, which subagents ran inside it and their own token
+        totals), and to let you search and export your own past sessions. This reading is
+        read-only — nothing about any of your projects is ever changed.
       </p>
       <p>This program:</p>
       <ul>
         <li>Runs only on your machine, listening only on <code class="mono">127.0.0.1</code> — never reachable from the internet or any other device.</li>
-        <li>Makes no network request of its own; the only network activity it ever causes is the stack's own install/build/test commands during New Project's opt-in "verify" step, described above.</li>
+        <li>Makes no network request of its own, with no exceptions.</li>
+        <li>Writes only to its own local config directory (an access token and a one-time pairing marker) — never to any project directory.</li>
         <li>Requires a randomly generated access token before the extension can talk to it at all.</li>
       </ul>
       <p>You can remove it at any time; instructions are in the project's README.</p>
@@ -375,10 +352,6 @@
           <div class="value">Uninstall the extension, or clear its site data from your browser's settings — both remove all stored history immediately.</div>
         </div>
       </div>
-      <p>Guardrails data (permission rules, hooks, skills, and CLAUDE.md content) is read live
-      from the daemon each time you open that view. The extension keeps only a small local
-      record per project you've viewed — a fingerprint and a list of rule and hook names — so it
-      can tell you what changed since you last looked; CLAUDE.md content is never stored.</p>
       <p>For debugging, the extension also keeps your 50 most recent raw usage responses from
       claude.ai (numbers and timestamps only, no conversation content), which you can export
       from a collapsed section of the options page. They are never sent anywhere.</p>
@@ -387,8 +360,8 @@
         backup), and restore it later (Settings → Restore from file). Both are ordinary browser
         file downloads/uploads you trigger yourself — the file only ever goes where you choose to
         save or open it, never anywhere this project controls. A restore only ever adds history
-        you don't already have, or a Guardrails record newer than what's already stored; it never
-        overwrites the local daemon connection this browser is already paired with.
+        you don't already have; it never overwrites the local daemon connection this browser is
+        already paired with.
       </p>
     </section>
 
@@ -403,7 +376,7 @@
           </thead>
           <tbody>
             <tr><td class="mono">host: claude.ai</td><td>Read usage data from claude.ai's own responses while you're on the site — the entire basis of the extension.</td></tr>
-            <tr><td class="mono">host: 127.0.0.1</td><td>Talk to the optional local daemon on your own machine, if you've installed it — for usage/CLI data, and for the Guardrails view's local Claude Code config read/write described above. Nothing outside your device.</td></tr>
+            <tr><td class="mono">host: 127.0.0.1</td><td>Talk to the optional local daemon on your own machine, if you've installed it — for usage/CLI/subagent data, described above. Nothing outside your device.</td></tr>
             <tr><td class="mono">alarms</td><td>Schedule the periodic usage check (every few minutes) and the pairing check for the local daemon.</td></tr>
             <tr><td class="mono">notifications</td><td>Show a local system notification when a usage bar crosses a threshold you've configured — defaults to 80%/95%, adjustable in Settings, or can be turned off entirely by clearing the thresholds there. One other optional notification, generated on your device from data already stored locally: a warning, off by default, that you are on pace to run out before a limit resets.</td></tr>
           </tbody>
@@ -418,13 +391,8 @@
         token on every request, and rejects any request coming from a regular web page — so a
         malicious website cannot reach it. Every piece of data the extension receives, from
         claude.ai or from the daemon, is validated against a strict schema before it's trusted;
-        anything unexpected is discarded rather than acted on.
-      </p>
-      <p>
-        The Guardrails view's file reads and writes are scoped the same way: a
-        <code class="mono">CLAUDE.md</code> file can only be read or saved if the daemon itself
-        already found it on disk under the project you selected — a request can't point it at an
-        arbitrary file elsewhere on your machine.
+        anything unexpected is discarded rather than acted on. The daemon itself writes only to
+        its own local config directory — never to any project directory.
       </p>
     </section>
 

@@ -25,6 +25,14 @@ describe('summarizeHeadroom', () => {
     expect(result?.text).toMatch(/Weekly limit reached/);
   });
 
+  it('reads "resets now", not the doubled "resets resetting now", once the reset time has passed', () => {
+    // A stale snapshot can have a resetsAt already in the past — formatResetLabel must return a
+    // fragment ("now"), not a full sentence ("resetting now"), since this text prepends its own
+    // "resets ".
+    const result = summarizeHeadroom([{ title: 'Session', bar: bar(100, -0.1), history: [] }], now);
+    expect(result?.text).toBe('Session limit reached — resets now.');
+  });
+
   it('warns when the projection beats the reset', () => {
     // Projects full ~5h out (50% at 10%/h) but the reset is 8h away.
     const result = summarizeHeadroom([{ title: 'Session', bar: bar(50, 8), history: steep }], now);

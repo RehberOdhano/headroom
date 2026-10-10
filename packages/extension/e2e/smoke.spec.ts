@@ -101,16 +101,16 @@ test('dashboard hides daemon-only tabs until the daemon is paired', async () => 
   const dashboard = await context.newPage();
   await gotoExtensionPage(dashboard, 'dashboard.html');
 
-  await expect(dashboard.getByRole('tab', { name: 'Usage & Forecast' })).toBeVisible();
-  await expect(dashboard.getByRole('tab', { name: 'CLI Attribution' })).toBeVisible();
-  for (const name of ['Search', 'Guardrails', 'New Project']) {
+  await expect(dashboard.getByRole('tab', { name: 'Overview' })).toBeVisible();
+  await expect(dashboard.getByRole('tab', { name: 'Activity' })).toBeVisible();
+  for (const name of ['Sessions', 'Guardrails', 'New Project']) {
     await expect(dashboard.getByRole('tab', { name })).toHaveCount(0);
   }
   // Snapshot captured by the previous test is on the chart, and the removed export buttons are gone.
   await expect(dashboard.getByText(/snapshots? stored locally/)).toBeVisible({ timeout: 20_000 });
   await expect(dashboard.getByRole('button', { name: /Export history/ })).toHaveCount(0);
 
-  await dashboard.getByRole('tab', { name: 'CLI Attribution' }).click();
+  await dashboard.getByRole('tab', { name: 'Activity' }).click();
   await expect(dashboard.getByText(/npm install -g @rehberodhano\/claude-usage-companion-daemon/)).toBeVisible();
   // Heatmap sub-view is gone.
   await expect(dashboard.getByRole('button', { name: 'By time of day' })).toHaveCount(0);

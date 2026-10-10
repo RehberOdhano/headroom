@@ -5,6 +5,7 @@ import { ConnectDaemonCard } from './ConnectDaemon.tsx';
 import { CliAttributionPanel } from './cli/CliAttributionPanel.tsx';
 import { RetentionWarnings } from './cli/RetentionWarnings.tsx';
 import { SessionSearch } from './cli/SessionSearch.tsx';
+import { WhatChanged } from './cli/WhatChanged.tsx';
 
 /**
  * Fetches settings once and renders `children(settings)` once the daemon is configured, or a
@@ -27,16 +28,13 @@ export function DaemonGate({ hint, children }: { hint: string; children: (settin
   return <>{children(settings)}</>;
 }
 
-/** CLI attribution + retention warnings, daemon-backed. Session search is its own tab
- *  (`SearchTab`, below) since it has its own pagination and can otherwise get long.
- *  Retention warnings sit outside the attribution panel, above it — they're a time-sensitive
- *  alert, not something to bury behind a sub-view someone might not click. */
+/** Project/model/session/subagent attribution + "what changed", daemon-backed — the Activity tab. */
 export function CliTab() {
   return (
-    <DaemonGate hint="Connect the local daemon in the extension's options page to see Claude Code CLI usage and retention warnings here.">
+    <DaemonGate hint="Connect the local daemon in the extension's options page to see Claude Code CLI usage here.">
       {(settings) => (
         <>
-          <RetentionWarnings settings={settings} />
+          <WhatChanged settings={settings} />
           <CliAttributionPanel settings={settings} />
         </>
       )}
@@ -44,12 +42,18 @@ export function CliTab() {
   );
 }
 
-/** Full-text search across local Claude Code sessions — its own tab, not paired with CLI
- *  attribution, so paginated results have room to breathe. */
+/** Search, drilldown, retention, export, resume — everything about a session's lifecycle lives
+ *  in the Sessions tab. Retention warnings sit above search, not buried behind it — they're a
+ *  time-sensitive alert, not something to bury behind a sub-view someone might not click. */
 export function SearchTab() {
   return (
     <DaemonGate hint="Connect the local daemon in the extension's options page to search your Claude Code CLI sessions here.">
-      {(settings) => <SessionSearch settings={settings} />}
+      {(settings) => (
+        <>
+          <RetentionWarnings settings={settings} />
+          <SessionSearch settings={settings} />
+        </>
+      )}
     </DaemonGate>
   );
 }

@@ -5,11 +5,11 @@ browser extension (Chrome, Edge, Firefox). The extension is fully functional on 
 package is only worth installing once the extension is, since it's what pairs with it to unlock
 everything below.
 
-It reads your local Claude Code session logs (`~/.claude/projects/**/*.jsonl`) and config. It
-never talks to claude.ai, and claude.ai never talks to it. It's stateless and read-only except
-for two write paths you trigger yourself (Guardrails overrides, scoped to one gitignored file, and
-New Project scaffolding) — see
-the [main repo](https://github.com/RehberOdhano/headroom) for the full source and docs.
+It reads your local Claude Code session logs (`~/.claude/projects/**/*.jsonl`). It never talks to
+claude.ai, and claude.ai never talks to it. It's stateless and read-only with respect to any of
+your projects — its only writes are to its own local config dir (the auth token and pairing
+marker) — see the [main repo](https://github.com/RehberOdhano/headroom) for the full source and
+docs.
 
 ## Install
 
@@ -41,12 +41,11 @@ start` in the foreground works regardless of platform.
 
 Once paired, the extension's dashboard gets:
 
-- CLI token attribution by project and model, plus a rough tokens-per-percent-of-weekly-limit
-  estimate
+- CLI token attribution by project, model, and session, plus a rough
+  tokens-per-percent-of-weekly-limit estimate
+- Read-only subagent usage attribution (which subagents ran, their own token totals)
 - Full-text session search with one-click resume
 - Retention warnings before Claude Code's 30-day log cleanup, with markdown export
-- Guardrails: view/override permission rules, hooks, skills, and CLAUDE.md for a project you pick
-- New Project scaffolding with automatic stack detection
 
 See the [main repo's README](https://github.com/RehberOdhano/headroom#features) for the full
 feature reference.

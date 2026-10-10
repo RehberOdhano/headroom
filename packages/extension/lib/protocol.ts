@@ -78,6 +78,11 @@ export interface PairingStatus {
 export interface DaemonHealth {
   ok: boolean;
   checkedAt: string;
+  /** The daemon's own reported version (`/health`'s `version` field), when the daemon is new
+   *  enough to send one and reachable long enough to be asked. `undefined` for an older,
+   *  not-yet-upgraded daemon (stale-running-daemon compatibility, see root CLAUDE.md) or when
+   *  the check itself failed. */
+  version?: string;
 }
 
 /** Extension-only leg (popup/options/badge <-> background) — a superset of CaptureProtocolMap. */

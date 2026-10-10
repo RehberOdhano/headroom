@@ -44,12 +44,12 @@ pay-as-you-go usage.
       <sub>Popup — at-a-glance bars and a burn-rate warning</sub>
     </td>
     <td align="center" width="33%">
-      <img src="docs/screenshot-usage-forecast.png" width="260" alt="Dashboard Usage & Forecast tab, showing multi-week history charts for session and weekly limits" /><br />
-      <sub>Usage & Forecast — multi-week history, 24h/7d/30d</sub>
+      <img src="docs/screenshot-usage-forecast.png" width="260" alt="Dashboard Overview tab, showing multi-week history charts for session and weekly limits" /><br />
+      <sub>Overview — multi-week history, 24h/7d/30d</sub>
     </td>
     <td align="center" width="33%">
-      <img src="docs/screenshot-cli-attribution.png" width="260" alt="Dashboard CLI Attribution tab, showing token totals by project, model, and individual session, each filterable by typing" /><br />
-      <sub>CLI Attribution — by project, model, and session</sub>
+      <img src="docs/screenshot-cli-attribution.png" width="260" alt="Dashboard Activity tab, showing token totals by project, model, and individual session, each filterable by typing" /><br />
+      <sub>Activity — by project, model, and session</sub>
     </td>
   </tr>
 </table>
@@ -88,8 +88,8 @@ The extension is fully functional on its own. The daemon is a separate, opt-in c
 reads your local Claude Code session logs (`~/.claude/projects/**/*.jsonl`) to unlock CLI
 attribution, cross-project session search, and retention warnings. It never communicates with
 claude.ai, and claude.ai never communicates with it. It is stateless — all persistent state
-lives in the extension — and read-only apart from two things you trigger yourself: Guardrails
-overrides and New Project scaffolding.
+lives in the extension — and read-only with respect to any of your projects; its only writes
+are to its own local config dir (the auth token and pairing marker).
 
 Requires Node.js ≥20.
 
@@ -162,21 +162,25 @@ existing statusline script's stdin through it and append its output as an additi
 | Limit bars | Session (5h) and weekly usage from `/usage` polling, upgraded to exact unrounded fractions by `message_limit` SSE events (claude.ai chat) or `rate_limit_event` entries (Claude Code on the web) while active. Reset countdowns switch from relative ("in 3h 14m") to absolute ("Thu, 8:00 PM") once more than a day out. |
 | Usage credits | Mirrors claude.ai's own "Usage credits" spend for accounts with pay-as-you-go enabled: this month's spend against your $ limit, on the dashboard and as a popup row. |
 | Burn-rate forecast | Linear projection over the current run since the last reset, with confidence labeled low/medium/high, plus a concrete suggestion (switch model / pace back) when at risk of hitting the limit before reset. |
+| Safe pace | How slow your average usage needs to stay to last until reset, shown next to each bar — and, once a trusted forecast exists, how far your recent pace is running above that. |
+| Anomaly detection | Flags when a bar's current run is rising well faster than its own recent pattern (a median baseline over your last few windows) — never a claim about *why*, since a policy change can move the observed rate as much as your own usage can. |
+| What changed | For the weekly window: which project/model dominates, and how that compares to the same elapsed portion of the previous week — shown only once a swing clears a real significance threshold, never a "nothing changed" filler line. |
+| Usage Inspector | When an anomaly fires, correlates the local Claude Code sessions active during that window — largest contributor, model mix, biggest sessions — or says plainly when no local activity matches the account-level jump. Correlation, never causation. |
 | History dashboard | Weeks of local snapshot history as charts, with 24h/7d/30d windows. |
-| Backup & restore | Export local usage history, Guardrails project fingerprints, and settings (excluding the daemon connection, which stays device-local) to a JSON file, and restore it later — additive only, never duplicates a snapshot already stored or overwrites a fresher Guardrails record. Protects against losing history when clearing browser data or moving to a new machine. |
+| Backup & restore | Export local usage history and settings (excluding the daemon connection, which stays device-local) to a JSON file, and restore it later — additive only, never duplicates a snapshot already stored. Protects against losing history when clearing browser data or moving to a new machine. |
 | Headline | When something needs attention the popup leads with one line — "Session limit reached" or "At this pace, session runs out ~Thu 3:40 PM — before it resets" (only from a medium/high-confidence forecast on a bar with at least 10% used, and only when it beats the reset by 30+ minutes — so a barely-touched bar or a photo finish never cries wolf). |
-| Progressive disclosure | Until the daemon is connected the dashboard shows only Usage & Forecast and CLI Attribution (which doubles as a copy-paste install prompt); Search, and the write-capable Guardrails / New Project tabs under an "Advanced" divider, appear once it pairs. First install opens the setup checklist; the first launch after an update shows a one-time "what's new". |
+| Progressive disclosure | Until the daemon is connected the dashboard shows only Overview and Activity (which doubles as a copy-paste install prompt); Sessions appears once it pairs. First install opens the setup checklist; the first launch after an update shows a one-time "what's new". |
 | Pace warning | Opt-in (Settings): a notification *before* a limit is hit — when the burn-rate forecast, on a bar with at least 10% used and at least medium confidence, lands 30+ minutes before the window resets. Once per limit window. |
 | Threshold alerts | Configurable browser notifications (default: 80% / 95%). |
 | On-page badge | A small, self-contained, toggleable usage indicator on claude.ai. |
 | CLI attribution *(daemon)* | Token totals by project, by model (with each model's share of tokens), and by individual session — project and session lists are filterable by typing, so a long list doesn't mean scrolling to find one entry — plus a rough tokens-per-percent-of-weekly-limit estimate, applied per-project too ("~N% of this week") and, week by week, as a small CLI-vs-chat split chart. CSV export (matching whatever's currently filtered) alongside the existing per-session markdown export. |
+| Subagent usage attribution *(daemon)* | Expand a session to see which subagents ran inside it and their own token totals — read-only, and tracked separately from that session's own total, never added to it. |
 | Session search *(daemon)* | Full-text search across local Claude Code sessions, with a one-click `cd <dir> && claude --resume <id>` copy button. |
 | Retention warnings *(daemon)* | Flags sessions nearing Claude Code's 30-day log cleanup, with one-click markdown export (embedded images included, and an opt-in checkbox to include tool calls/results as short summaries). |
-| Guardrails *(daemon)* | See and override Claude Code's permission rules across global/project/local scope layers, plus read-only visibility into hooks and skills, for a project you pick. Overrides only ever write to that project's gitignored `.claude/settings.local.json` — never a shared, committed file. "Apply recommended protections" denies every bundled known-risky command pattern not already covered, in one click, writing one rule at a time to avoid racing its own writes. Also previews and edits CLAUDE.md docs (rendered markdown, with an explicit Save — no autosave). A cross-project health checklist (CLAUDE.md / settings / hooks / skills present?) sits above the picker, and a project you've viewed before flags exactly what changed ("2 new allow rules, 1 hook removed") since you last viewed it — escalated to a warning if a newly-allowed rule matches a known-risky command pattern. |
-| Subagent model routing *(daemon)* | See and change which model each project subagent uses (`inherit`/`opus`/`sonnet`/`haiku`, or a custom model id) directly from its `.claude/agents/*.md` frontmatter — e.g. Opus for a planning subagent, Haiku for a quick one. Only ever writes to a project's own agents; a personal global agent is shown read-only. |
 | Daemon liveness | The options page shows whether the daemon was reachable on its last background check, not just whether pairing once succeeded — a crashed or stopped daemon no longer silently shows as "Connected automatically" forever. A setup checklist also flags the other silent prerequisites (opened Settings → Usage on claude.ai yet? first snapshot captured? daemon paired?) that would otherwise leave tabs empty with no explanation. |
+| Source/freshness labels | Every number is quietly traceable to where it came from — reported by Claude, read from your local logs, or a derived estimate — via a tooltip, without cluttering the page with badges. |
+| Diagnostics | Settings → Diagnostics: a privacy-safe, allowlisted summary (extension/daemon version, last capture, daemon reachability, project/session counts) you can copy for troubleshooting — never your token, account id, or any conversation content. |
 | Attention badge *(daemon)* | A small count on the toolbar icon of sessions nearing Claude Code's 30-day log cleanup, so they don't stay invisible until you happen to open the right tab. |
-| New Project *(daemon)* | Scaffold a new project folder, or fill in an existing one, with a name/description, a free-form "Stack" tag picker (typing a tag not in the curated list adds it, growing the list over time), and starter files for whichever of six real templates the picked stack tags resolve to (Node/TypeScript, Python, Go, Java, Kotlin, C#) — anything else is recorded as metadata only, no scaffold generated. Detects an existing folder's stack automatically (recursively, so a stack marker in a subdirectory like a mobile app's native `android/` folder is still found), never by reading document content. Optional git init, permission-rule protections, and a real install/build/test "verify" run. |
 
 ## Privacy & security
 
@@ -220,7 +224,7 @@ packages/
 
 ```sh
 pnpm install
-pnpm -r run test         # 613 tests across the three packages as of this writing
+pnpm -r run test         # 463 tests across the three packages as of this writing
 pnpm -r run typecheck
 pnpm -r run build
 pnpm --filter @headroom/extension run test:e2e   # builds, then drives the real extension in Chromium against a stubbed claude.ai

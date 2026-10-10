@@ -6,10 +6,15 @@ import { createApp } from '../src/app.js';
 import { withFixtureClaudeDir } from './helpers/fixture-claude-dir.js';
 
 describe('daemon app', () => {
-  it('responds to /health', async () => {
+  it('responds to /health with the daemon\'s own version', async () => {
     const res = await createApp().request('/health');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    // The real published version string, not a guessed/hardcoded one — asserting the exact
+    // literal here would just re-encode package.json's version and go stale on every bump.
+    expect(typeof body.version).toBe('string');
+    expect(body.version.length).toBeGreaterThan(0);
   });
 
   it('GET /sessions returns the ccusage session report', async () => {
@@ -170,8 +175,36 @@ describe('daemon app', () => {
     });
   });
 
-  describe('/config*', () => {
-    it('GET /config/projects lists known project dirs from session logs', async () => {
+  describe('GET /sessions/:id/subagents', () => {
+    it('returns the real subagent, paired with its .meta.json', async () => {
+      await withFixtureClaudeDir(async (claudeConfigDir) => {
+        const res = await createApp({ ccusage: { claudeConfigDir } }).request(
+          '/sessions/11111111-1111-4111-8111-111111111111/subagents',
+        );
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.subagents).toHaveLength(2);
+        expect(body.subagents.map((s: { agentId: string }) => s.agentId).sort()).toEqual(['test0001', 'test0002']);
+        expect(body.subagents.find((s: { agentId: string }) => s.agentId === 'test0001')).toMatchObject({
+          agentType: 'Explore',
+          toolUseId: 'toolu_alpha0004',
+        });
+      }, 'session-log-dir');
+    });
+
+    it('returns an empty list, not an error, for a session with no subagents', async () => {
+      await withFixtureClaudeDir(async (claudeConfigDir) => {
+        const res = await createApp({ ccusage: { claudeConfigDir } }).request(
+          '/sessions/22222222-2222-4222-8222-222222222222/subagents',
+        );
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ subagents: [] });
+      }, 'session-log-dir');
+    });
+  });
+
+  describe('/config/projects', () => {
+    it('lists known project dirs from session logs', async () => {
       await withFixtureClaudeDir(
         async (claudeConfigDir) => {
           const res = await createApp({ ccusage: { claudeConfigDir } }).request('/config/projects');
@@ -181,469 +214,6 @@ describe('daemon app', () => {
         },
         'session-log-dir',
       );
-    });
-
-    it('GET /config returns global-only when no projectDir is given', async () => {
-      await withFixtureClaudeDir(
-        async (dir) => {
-          const claudeConfigDir = path.join(dir, 'home');
-          const res = await createApp({ ccusage: { claudeConfigDir } }).request('/config');
-          expect(res.status).toBe(200);
-          const body = await res.json();
-          expect(body.global.allow).toEqual(['WebFetch']);
-          expect(body.project).toBeNull();
-        },
-        'claude-config-dir',
-      );
-    });
-
-    it('GET /config combines all three layers for a given projectDir', async () => {
-      await withFixtureClaudeDir(
-        async (dir) => {
-          const claudeConfigDir = path.join(dir, 'home');
-          const projectDir = path.join(dir, 'project');
-          const res = await createApp({ ccusage: { claudeConfigDir } }).request(
-            `/config?projectDir=${encodeURIComponent(projectDir)}`,
-          );
-          expect(res.status).toBe(200);
-          const body = await res.json();
-          expect(body.project.deny).toContain('Bash(rm -rf *)');
-          expect(body.local.deny).toContain('Bash(kill *)');
-          expect(body.skills).toHaveLength(1);
-        },
-        'claude-config-dir',
-      );
-    });
-
-    it('GET /config/claude-md lists CLAUDE.md files under a project', async () => {
-      await withFixtureClaudeDir(
-        async (dir) => {
-          const projectDir = path.join(dir, 'project');
-          const res = await createApp().request(`/config/claude-md?projectDir=${encodeURIComponent(projectDir)}`);
-          expect(res.status).toBe(200);
-          const body = await res.json();
-          expect(body.files).toHaveLength(2);
-        },
-        'claude-config-dir',
-      );
-    });
-
-    it('GET /config/claude-md/content 404s for a path outside the enumerated set', async () => {
-      await withFixtureClaudeDir(
-        async (dir) => {
-          const projectDir = path.join(dir, 'project');
-          const outside = path.join(dir, 'home', 'settings.json');
-          const res = await createApp().request(
-            `/config/claude-md/content?projectDir=${encodeURIComponent(projectDir)}&path=${encodeURIComponent(outside)}`,
-          );
-          expect(res.status).toBe(404);
-        },
-        'claude-config-dir',
-      );
-    });
-
-    it('PUT /config/claude-md/content overwrites an enumerated file', async () => {
-      await withFixtureClaudeDir(
-        async (dir) => {
-          const projectDir = path.join(dir, 'project');
-          const filePath = path.join(projectDir, 'CLAUDE.md');
-          const res = await createApp().request('/config/claude-md/content', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectDir, path: filePath, content: '# Edited\n' }),
-          });
-          expect(res.status).toBe(200);
-          expect(await res.json()).toEqual({ content: '# Edited\n' });
-
-          const readBack = await createApp().request(
-            `/config/claude-md/content?projectDir=${encodeURIComponent(projectDir)}&path=${encodeURIComponent(filePath)}`,
-          );
-          expect(await readBack.json()).toEqual({ content: '# Edited\n' });
-        },
-        'claude-config-dir',
-      );
-    });
-
-    it('PUT /config/claude-md/content 404s for a path outside the enumerated set', async () => {
-      await withFixtureClaudeDir(
-        async (dir) => {
-          const projectDir = path.join(dir, 'project');
-          const outside = path.join(dir, 'home', 'settings.json');
-          const res = await createApp().request('/config/claude-md/content', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectDir, path: outside, content: 'clobbered' }),
-          });
-          expect(res.status).toBe(404);
-        },
-        'claude-config-dir',
-      );
-    });
-
-    it('PUT /config/agents/model updates a project agent\'s model field', async () => {
-      await withFixtureClaudeDir(
-        async (dir) => {
-          const projectDir = path.join(dir, 'project');
-          const filePath = path.join(projectDir, '.claude', 'agents', 'reviewer.md');
-          const res = await createApp().request('/config/agents/model', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectDir, path: filePath, model: 'haiku' }),
-          });
-          expect(res.status).toBe(200);
-          expect(await res.json()).toEqual({
-            name: 'reviewer',
-            description: 'Read-only reviewer used only in daemon fixtures, not real conversation content.',
-            model: 'haiku',
-            path: filePath,
-            scope: 'project',
-          });
-        },
-        'claude-config-dir',
-      );
-    });
-
-    it('PUT /config/agents/model 404s for a path outside the project-scope agents it can enumerate', async () => {
-      await withFixtureClaudeDir(
-        async (dir) => {
-          const projectDir = path.join(dir, 'project');
-          const globalAgentPath = path.join(dir, 'home', 'agents', 'personal-helper.md');
-          const res = await createApp().request('/config/agents/model', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectDir, path: globalAgentPath, model: 'opus' }),
-          });
-          expect(res.status).toBe(404);
-        },
-        'claude-config-dir',
-      );
-    });
-
-    it('PUT /config/agents/model rejects an empty model', async () => {
-      await withFixtureClaudeDir(
-        async (dir) => {
-          const projectDir = path.join(dir, 'project');
-          const filePath = path.join(projectDir, '.claude', 'agents', 'reviewer.md');
-          const res = await createApp().request('/config/agents/model', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectDir, path: filePath, model: '   ' }),
-          });
-          expect(res.status).toBe(400);
-        },
-        'claude-config-dir',
-      );
-    });
-
-    it('POST /config/permissions writes an override to settings.local.json', async () => {
-      await withFixtureClaudeDir(
-        async (dir) => {
-          const projectDir = path.join(dir, 'project');
-          const res = await createApp().request('/config/permissions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectDir, pattern: 'Bash(npm publish *)', effect: 'deny' }),
-          });
-          expect(res.status).toBe(200);
-          const body = await res.json();
-          expect(body.deny).toContain('Bash(npm publish *)');
-        },
-        'claude-config-dir',
-      );
-    });
-
-    it('rejects a relative projectDir on every route that accepts one, with 400', async () => {
-      const app = createApp();
-      const getRes = await app.request(`/config?projectDir=${encodeURIComponent('relative/path')}`);
-      expect(getRes.status).toBe(400);
-
-      const claudeMdRes = await app.request(`/config/claude-md?projectDir=${encodeURIComponent('relative/path')}`);
-      expect(claudeMdRes.status).toBe(400);
-
-      const postRes = await app.request('/config/permissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectDir: 'relative/path', pattern: 'Bash(rm -rf *)', effect: 'deny' }),
-      });
-      expect(postRes.status).toBe(400);
-    });
-
-    it('rejects a nonexistent absolute projectDir with 400 rather than creating it', async () => {
-      await withFixtureClaudeDir(async (dir) => {
-        const nonexistent = path.join(dir, 'does-not-exist');
-        const res = await createApp().request('/config/permissions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectDir: nonexistent, pattern: 'Bash(rm -rf *)', effect: 'deny' }),
-        });
-        expect(res.status).toBe(400);
-        const { existsSync } = await import('node:fs');
-        expect(existsSync(nonexistent)).toBe(false);
-      }, 'claude-config-dir');
-    });
-
-    it('POST /config/permissions rejects a missing field with 400', async () => {
-      const res = await createApp().request('/config/permissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pattern: 'Bash(rm -rf *)', effect: 'deny' }),
-      });
-      expect(res.status).toBe(400);
-    });
-
-    it('DELETE /config/permissions removes a rule from settings.local.json', async () => {
-      await withFixtureClaudeDir(
-        async (dir) => {
-          const projectDir = path.join(dir, 'project');
-          const res = await createApp().request('/config/permissions', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectDir, pattern: 'Bash(kill *)', effect: 'deny' }),
-          });
-          expect(res.status).toBe(200);
-          const body = await res.json();
-          expect(body.deny).toEqual([]);
-        },
-        'claude-config-dir',
-      );
-    });
-  });
-
-  describe('POST /bootstrap', () => {
-    let parent: string;
-
-    beforeEach(() => {
-      parent = mkdtempSync(path.join(tmpdir(), 'headroom-app-bootstrap-'));
-    });
-
-    afterEach(() => {
-      rmSync(parent, { recursive: true, force: true });
-    });
-
-    it('creates a new project folder with a scaffold inferred from the picked tags, and a CLAUDE.md', async () => {
-      const targetDir = path.join(parent, 'new-project');
-      const res = await createApp().request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetDir, mode: 'create', name: 'New Project', description: 'A test.', technologies: ['TypeScript'] }),
-      });
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.createdFolder).toBe(true);
-      expect(body.createdFiles.some((f: string) => f.endsWith('CLAUDE.md'))).toBe(true);
-      expect(body.createdFiles.some((f: string) => f.endsWith('package.json'))).toBe(true);
-      expect(body.inferredStack).toBe('node-typescript');
-    });
-
-    it('rejects create mode when the target already exists, with 400', async () => {
-      const res = await createApp().request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetDir: parent, mode: 'create', name: 'x', description: '' }),
-      });
-      expect(res.status).toBe(400);
-    });
-
-    it('rejects existing mode when the target does not exist, with 400', async () => {
-      const res = await createApp().request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetDir: path.join(parent, 'nope'), mode: 'existing', name: 'x', description: '' }),
-      });
-      expect(res.status).toBe(400);
-    });
-
-    it('rejects a missing name with 400', async () => {
-      const res = await createApp().request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetDir: path.join(parent, 'x'), mode: 'create', description: '' }),
-      });
-      expect(res.status).toBe(400);
-    });
-
-    it('records unmatched tags in CLAUDE.md and infers "other" when none match a built-in template', async () => {
-      const targetDir = path.join(parent, 'rust-project');
-      const res = await createApp().request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetDir, mode: 'create', name: 'rust-project', description: '', technologies: ['Rust'] }),
-      });
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.inferredStack).toBe('other');
-
-      const { readFileSync } = await import('node:fs');
-      const claudeMd = readFileSync(path.join(targetDir, 'CLAUDE.md'), 'utf-8');
-      expect(claudeMd).toContain('Tech stack: Rust');
-      expect(claudeMd).toContain('No built-in scaffold template matches this stack yet');
-    });
-
-    it('saves an uploaded document under docs/ and never overwrites it on a second run', async () => {
-      const targetDir = path.join(parent, 'with-doc');
-      const app = createApp();
-      const first = await app.request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetDir,
-          mode: 'create',
-          name: 'with-doc',
-          description: '',
-          document: { filename: 'brief.md', content: 'original brief', encoding: 'utf8' },
-        }),
-      });
-      expect(first.status).toBe(200);
-
-      const second = await app.request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetDir,
-          mode: 'existing',
-          name: 'with-doc',
-          description: '',
-          document: { filename: 'brief.md', content: 'a different brief', encoding: 'utf8' },
-        }),
-      });
-      expect(second.status).toBe(200);
-      const secondBody = await second.json();
-      expect(secondBody.skippedFiles.some((f: string) => f.endsWith('brief.md'))).toBe(true);
-
-      const { readFileSync } = await import('node:fs');
-      expect(readFileSync(path.join(targetDir, 'docs', 'brief.md'), 'utf-8')).toBe('original brief');
-    });
-
-    it('initializes a real git repo when initGit is true', async () => {
-      const targetDir = path.join(parent, 'git-project');
-      const res = await createApp().request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetDir, mode: 'create', name: 'git-project', description: '', initGit: true }),
-      });
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.gitInitialized).toBe(true);
-
-      const { existsSync } = await import('node:fs');
-      expect(existsSync(path.join(targetDir, '.git'))).toBe(true);
-    });
-
-    it('defaults initGit and runVerification to false, never touching git or running any command', async () => {
-      const targetDir = path.join(parent, 'plain-project');
-      const res = await createApp().request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetDir, mode: 'create', name: 'plain-project', description: '' }),
-      });
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.gitInitialized).toBe(false);
-      expect(body.verification).toBeNull();
-
-      const { existsSync } = await import('node:fs');
-      expect(existsSync(path.join(targetDir, '.git'))).toBe(false);
-    });
-
-    it('rejects a non-boolean initGit with 400', async () => {
-      const res = await createApp().request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetDir: path.join(parent, 'x'), mode: 'create', name: 'x', description: '', initGit: 'yes' }),
-      });
-      expect(res.status).toBe(400);
-    });
-
-    it('records technologies in CLAUDE.md when present', async () => {
-      const targetDir = path.join(parent, 'tagged-project');
-      const res = await createApp().request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetDir,
-          mode: 'create',
-          name: 'tagged-project',
-          description: '',
-          technologies: ['React', 'PostgreSQL'],
-        }),
-      });
-      expect(res.status).toBe(200);
-
-      const { readFileSync } = await import('node:fs');
-      expect(readFileSync(path.join(targetDir, 'CLAUDE.md'), 'utf-8')).toContain('Tech stack: React, PostgreSQL');
-    });
-
-    it('rejects a non-array technologies with 400', async () => {
-      const res = await createApp().request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetDir: path.join(parent, 'x'), mode: 'create', name: 'x', description: '', technologies: 'React' }),
-      });
-      expect(res.status).toBe(400);
-    });
-
-    it('rejects a technologies array containing a non-string with 400', async () => {
-      const res = await createApp().request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetDir: path.join(parent, 'x'),
-          mode: 'create',
-          name: 'x',
-          description: '',
-          technologies: ['React', 42],
-        }),
-      });
-      expect(res.status).toBe(400);
-    });
-
-    it('rejects a document missing a valid encoding with 400', async () => {
-      const res = await createApp().request('/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetDir: path.join(parent, 'x'),
-          mode: 'create',
-          name: 'x',
-          description: '',
-          document: { filename: 'brief.md', content: 'hi' },
-        }),
-      });
-      expect(res.status).toBe(400);
-    });
-  });
-
-  describe('GET /bootstrap/detect', () => {
-    let parent: string;
-
-    beforeEach(() => {
-      parent = mkdtempSync(path.join(tmpdir(), 'headroom-app-detect-'));
-    });
-
-    afterEach(() => {
-      rmSync(parent, { recursive: true, force: true });
-    });
-
-    it('detects name, description, and technologies from a real package.json, collapsing the implied Node.js tag since React is more specific', async () => {
-      const { writeFileSync } = await import('node:fs');
-      writeFileSync(
-        path.join(parent, 'package.json'),
-        JSON.stringify({ name: 'my-tool', description: 'does things', dependencies: { react: '^18.0.0' } }),
-      );
-
-      const res = await createApp().request(`/bootstrap/detect?targetDir=${encodeURIComponent(parent)}`);
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ name: 'my-tool', description: 'does things', technologies: ['React'] });
-    });
-
-    it('rejects a missing targetDir with 400', async () => {
-      const res = await createApp().request('/bootstrap/detect');
-      expect(res.status).toBe(400);
-    });
-
-    it('rejects a nonexistent targetDir with 400', async () => {
-      const res = await createApp().request(`/bootstrap/detect?targetDir=${encodeURIComponent(path.join(parent, 'nope'))}`);
-      expect(res.status).toBe(400);
     });
   });
 

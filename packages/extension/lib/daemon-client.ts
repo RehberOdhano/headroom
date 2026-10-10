@@ -1,33 +1,18 @@
 import {
-  agentDefinitionSchema,
   daemonDailyReportSchema,
   daemonProjectDailyReportSchema,
   daemonModelAggregateResponseSchema,
   daemonSearchResponseSchema,
   daemonSessionsReportSchema,
-  bootstrapResultSchema,
-  claudeConfigSnapshotSchema,
-  claudeMdContentResponseSchema,
-  claudeMdListResponseSchema,
+  daemonSubagentsResponseSchema,
   knownProjectsResponseSchema,
-  projectDetectionResponseSchema,
-  settingsLayerSchema,
-  type AgentDefinition,
-  type BootstrapDocumentEncoding,
-  type BootstrapMode,
-  type BootstrapResult,
-  type BootstrapStack,
-  type ClaudeConfigSnapshot,
-  type ClaudeMdFile,
   type DaemonDailyReport,
   type DaemonModelAggregate,
   type DaemonProjectDailyReport,
   type DaemonSearchMatch,
   type DaemonSessionsReport,
+  type DaemonSubagentSummary,
   type KnownProject,
-  type PermissionEffect,
-  type ProjectDetectionResult,
-  type SettingsLayer,
 } from '@headroom/shared';
 import type { Settings } from './protocol.js';
 
@@ -136,129 +121,19 @@ export async function exportDaemonSession(
   }
 }
 
+/** Each subagent's own token totals, reported entirely independently of this session's
+ *  ccusage-derived total (`DaemonSession.totalTokens`) — never add the two together, see
+ *  `findSubagentSummaries`' doc comment (packages/daemon/src/adapters/session-log.ts) for why. */
+export function getDaemonSessionSubagents(settings: Settings, sessionId: string): Promise<DaemonResult<{ subagents: DaemonSubagentSummary[] }>> {
+  return daemonFetch(settings, `/sessions/${encodeURIComponent(sessionId)}/subagents`, daemonSubagentsResponseSchema);
+}
+
+/** Read-only project paths discovered from real session `cwd`s (`findKnownProjectDirs`,
+ *  packages/daemon/src/adapters/session-log.ts) — used by Settings → Diagnostics' project count.
+ *  Despite the `/config/projects` route name (a historical holdover), this is plain session-log
+ *  reading, not configuration management — it stayed when the rest of `/config/*` was removed. */
 export function getDaemonConfigProjects(settings: Settings): Promise<DaemonResult<{ projects: KnownProject[] }>> {
   return daemonFetch(settings, '/config/projects', knownProjectsResponseSchema);
-}
-
-export function getDaemonConfig(settings: Settings, projectDir?: string): Promise<DaemonResult<ClaudeConfigSnapshot>> {
-  const query = projectDir ? `?projectDir=${encodeURIComponent(projectDir)}` : '';
-  return daemonFetch(settings, `/config${query}`, claudeConfigSnapshotSchema);
-}
-
-export function getDaemonClaudeMdList(settings: Settings, projectDir: string): Promise<DaemonResult<{ files: ClaudeMdFile[] }>> {
-  return daemonFetch(settings, `/config/claude-md?projectDir=${encodeURIComponent(projectDir)}`, claudeMdListResponseSchema);
-}
-
-export function getDaemonClaudeMdContent(
-  settings: Settings,
-  projectDir: string,
-  filePath: string,
-): Promise<DaemonResult<{ content: string }>> {
-  return daemonFetch(
-    settings,
-    `/config/claude-md/content?projectDir=${encodeURIComponent(projectDir)}&path=${encodeURIComponent(filePath)}`,
-    claudeMdContentResponseSchema,
-  );
-}
-
-/** Overwrites an enumerated CLAUDE.md file — the daemon's second write path
- *  (`writeClaudeMdContent`, packages/daemon/src/adapters/claude-config.ts), guarded the same way
- *  as the read: the daemon only accepts a `path` it can itself re-derive via a fresh directory
- *  scan of `projectDir`, never an arbitrary client-supplied path. No autosave — the caller
- *  decides when to write. */
-export function updateDaemonClaudeMdContent(
-  settings: Settings,
-  projectDir: string,
-  filePath: string,
-  content: string,
-): Promise<DaemonResult<{ content: string }>> {
-  return daemonFetch(settings, '/config/claude-md/content', claudeMdContentResponseSchema, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectDir, path: filePath, content }),
-  });
-}
-
-/** Sets a project-scope subagent's `model:` frontmatter field — the daemon only ever accepts a
- *  `path` it can itself re-derive as a real `<projectDir>/.claude/agents/*.md` file
- *  (`writeAgentModel`, packages/daemon/src/adapters/claude-config.ts), same guard as the
- *  CLAUDE.md write above; a global agent's path is always rejected (404). */
-export function updateDaemonAgentModel(
-  settings: Settings,
-  { projectDir, path, model }: { projectDir: string; path: string; model: string },
-): Promise<DaemonResult<AgentDefinition>> {
-  return daemonFetch(settings, '/config/agents/model', agentDefinitionSchema, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectDir, path, model }),
-  });
-}
-
-/** Writes/removes a permission-rule override — always `.claude/settings.local.json` on the
- *  daemon side (`writePermissionRule`/`removePermissionRule`, packages/daemon/src/adapters/
- *  claude-config.ts), never the shared `settings.json`. See Config.tsx for the UI-level framing
- *  ("overridden locally", not "removed"). */
-export function addDaemonPermissionRule(
-  settings: Settings,
-  params: { projectDir: string; pattern: string; effect: PermissionEffect },
-): Promise<DaemonResult<SettingsLayer>> {
-  return daemonFetch(settings, '/config/permissions', settingsLayerSchema, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-}
-
-export function removeDaemonPermissionRule(
-  settings: Settings,
-  params: { projectDir: string; pattern: string; effect: PermissionEffect },
-): Promise<DaemonResult<SettingsLayer>> {
-  return daemonFetch(settings, '/config/permissions', settingsLayerSchema, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-}
-
-/** No-LLM project scaffold (`POST /bootstrap`, packages/daemon/src/adapters/bootstrap.ts) — a
- *  deterministic folder/file setup from form inputs, never a guess at project content. `document`
- *  is the full text of an optional uploaded proposal/requirements/handoff file, saved verbatim
- *  under the target folder's `docs/`. */
-export function runDaemonBootstrap(
-  settings: Settings,
-  params: {
-    targetDir: string;
-    mode: BootstrapMode;
-    name: string;
-    description: string;
-    /** Free-form "Stack" tags (e.g. "React", "PostgreSQL", "Java") — there's no separate stack
-     *  field; the daemon infers which of its three real scaffold templates (if any) applies from
-     *  these tags (`inferStackFromTags`) and reports it back as `inferredStack`. Every tag is also
-     *  recorded into the generated CLAUDE.md regardless of whether it matched a template. */
-    technologies: string[];
-    /** `encoding` is `'utf8'` for real text (`.md`/`.txt`) or `'base64'` for anything binary
-     *  (`.pdf`/`.doc`/`.docx`) — a binary file can't survive a plain UTF-8 string round-trip. */
-    document: { filename: string; content: string; encoding: BootstrapDocumentEncoding } | null;
-    initGit: boolean;
-    /** Spawns the stack's real install/test commands on the daemon — the one deliberate,
-     *  explicit exception to "nothing leaves the machine" (root CLAUDE.md), since those commands
-     *  reach the real npm/PyPI/Go registries. Only meaningful when a scaffold actually got
-     *  written this same call. */
-    runVerification: boolean;
-  },
-): Promise<DaemonResult<BootstrapResult>> {
-  return daemonFetch(settings, '/bootstrap', bootstrapResultSchema, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-}
-
-/** Read-only, deterministic detection of an existing folder's already-there project info
- *  (`GET /bootstrap/detect`, packages/daemon/src/adapters/project-detect.ts) — used to prefill
- *  the "Use existing folder" form, never to write anything. */
-export function getDaemonProjectDetection(settings: Settings, targetDir: string): Promise<DaemonResult<ProjectDetectionResult>> {
-  return daemonFetch(settings, `/bootstrap/detect?targetDir=${encodeURIComponent(targetDir)}`, projectDetectionResponseSchema);
 }
 
 function toQuery(params: { since?: string; until?: string } | undefined, prefix: '?' | '&' = '?'): string {

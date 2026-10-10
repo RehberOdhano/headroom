@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [],
-    "ask": [],
-    "deny": ["Bash(kill *)"]
-  },
-  "someUnrelatedKey": "must survive a rewrite"
-}

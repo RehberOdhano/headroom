@@ -1,6 +1,18 @@
 /** What's-new copy shown once after an update. Add an entry per release worth announcing;
  *  versions without one show nothing. */
 export const RELEASE_NOTES: Record<string, string[]> = {
+  '0.3.0': [
+    'Added: a sustainable "safe pace" next to each bar — how slow usage needs to average to last until reset.',
+    'Added: anomaly detection — flags when a bar is rising well faster than its own recent pattern.',
+    'Added: "What changed?" — how this week’s project/model mix compares to the same point last week, once a swing is big enough to matter.',
+    'Added: Usage Inspector — when an anomaly fires, see which local sessions were active during that window (or that none were).',
+    'Added: read-only subagent activity visibility — expand a session to see which subagents ran and their own token totals.',
+    'Added: numbers are now labeled by where they come from (reported by Claude, read from local logs, or a rough estimate) via a tooltip.',
+    'Added: Settings → Diagnostics — a privacy-safe summary of extension/daemon status you can copy for troubleshooting — never your token, account id, or any conversation content.',
+    'Fixed: a bar whose reset time had just passed could read "resets resetting now" — now reads "resets now".',
+    'Changed: the dashboard is now Overview / Activity / Sessions, reorganized around usage intelligence rather than implementation history.',
+    'Changed: headroom is now focused specifically on Claude usage intelligence — Guardrails and New Project are no longer part of the shipped product.',
+  ],
   '0.2.2': [
     'CLI Attribution now breaks usage down by individual session, not just by project and model.',
     'The By-project and By-session tables are filterable by typing, for accounts with a long list.',

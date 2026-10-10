@@ -142,13 +142,22 @@ async function pairOrCheckHealth(): Promise<void> {
  */
 async function checkDaemonHealth(daemonUrl: string): Promise<void> {
   let ok: boolean;
+  let version: string | undefined;
   try {
     const response = await fetch(`${daemonUrl}/health`);
     ok = response.ok;
+    if (ok) {
+      // Defensive, not schema-validated: /health has never been parsed before now (callers only
+      // checked `response.ok`), and an older daemon simply won't have this field at all — leave
+      // `version` undefined rather than failing the whole health check over it.
+      const body: unknown = await response.json().catch(() => null);
+      const candidate = (body as { version?: unknown } | null)?.version;
+      if (typeof candidate === 'string') version = candidate;
+    }
   } catch {
     ok = false;
   }
-  const health: DaemonHealth = { ok, checkedAt: new Date().toISOString() };
+  const health: DaemonHealth = { ok, checkedAt: new Date().toISOString(), ...(version ? { version } : {}) };
   await db.meta.put({ key: 'daemonHealth', value: JSON.stringify(health) });
 }
 
@@ -371,11 +380,9 @@ async function checkBarAlert(
 }
 
 /**
- * A single small "is anything worth my attention?" count on the toolbar icon, aggregating
- * signals that would otherwise only surface if the user happened to open the right dashboard
- * tab: sessions nearing Claude Code's 30-day log cleanup. Deliberately excludes Guardrails config drift —
- * checking that for every known project on every 5-minute poll would mean a `/config` fetch per
- * project, too much daemon load for a background badge.
+ * A single small "is anything worth my attention?" count on the toolbar icon: sessions nearing
+ * Claude Code's 30-day log cleanup, which would otherwise only surface if the user happened to
+ * open the Sessions tab.
  */
 async function checkSessionsAndBadge(): Promise<void> {
   const settings = await getSettings();

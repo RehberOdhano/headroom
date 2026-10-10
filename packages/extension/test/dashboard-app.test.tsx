@@ -103,7 +103,7 @@ describe('dashboard App', () => {
     });
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({}));
     render(<App />);
-    await screen.findByRole('tab', { name: 'Search' });
+    await screen.findByRole('tab', { name: 'Sessions' });
     await screen.findByText(/No snapshots captured in this window yet/);
 
     const panelsByLabel = () => {
@@ -116,7 +116,7 @@ describe('dashboard App', () => {
     expect(panels.cli.hasAttribute('hidden')).toBe(true);
     expect(panels.search.hasAttribute('hidden')).toBe(true);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Search' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Sessions' }));
 
     panels = panelsByLabel();
     expect(panels.charts.hasAttribute('hidden')).toBe(true);
@@ -129,9 +129,9 @@ describe('dashboard App', () => {
     it('shows only the tabs that work without the daemon until it is connected', async () => {
       render(<App />);
       await screen.findByText(/No snapshots captured in this window yet/);
-      expect(screen.getByRole('tab', { name: 'Usage & Forecast' })).toBeTruthy();
-      expect(screen.getByRole('tab', { name: 'CLI Attribution' })).toBeTruthy();
-      expect(screen.queryByRole('tab', { name: 'Search' })).toBeNull();
+      expect(screen.getByRole('tab', { name: 'Overview' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: 'Activity' })).toBeTruthy();
+      expect(screen.queryByRole('tab', { name: 'Sessions' })).toBeNull();
       expect(screen.queryByRole('tab', { name: 'Guardrails' })).toBeNull();
       expect(screen.queryByRole('tab', { name: 'New Project' })).toBeNull();
       // The CLI tab doubles as the install prompt, with a copy-paste command.
@@ -141,8 +141,8 @@ describe('dashboard App', () => {
     it('moves between tabs with the arrow keys (roving tabindex)', async () => {
       render(<App />);
       await screen.findByText(/No snapshots captured in this window yet/);
-      const first = screen.getByRole('tab', { name: 'Usage & Forecast' });
-      const second = screen.getByRole('tab', { name: 'CLI Attribution' });
+      const first = screen.getByRole('tab', { name: 'Overview' });
+      const second = screen.getByRole('tab', { name: 'Activity' });
       expect(first.getAttribute('tabindex')).toBe('0');
       expect(second.getAttribute('tabindex')).toBe('-1');
       fireEvent.keyDown(first, { key: 'ArrowRight' });
@@ -209,56 +209,162 @@ describe('dashboard App', () => {
     });
   });
 
-  describe('New Project → Guardrails handoff', () => {
-    it('"Go to Guardrails" switches tabs and pre-fills the Guardrails project picker', async () => {
+  describe('safe pace and freshness', () => {
+    it('shows a plain "Updated … ago" line for the latest snapshot', async () => {
+      await db.limitSnapshots.add({ capturedAt: new Date().toISOString(), source: 'usage', session: bar(10), weekly: bar(20) });
+      render(<App />);
+      expect((await screen.findAllByText(/Updated just now/)).length).toBeGreaterThan(0);
+    });
+
+    it('shows a safe-pace line, including the comparison, once a medium/high-confidence forecast is established', async () => {
+      const now = new Date();
+      const hoursAgo = (h: number) => new Date(now.getTime() - h * 60 * 60 * 1000).toISOString();
+      // 20 hours to reset, 50% used -> safe rate is 2.5%/h; the fitted rate below (10%/h) is
+      // far above that, so both the base safe-pace line and its comparison clause should render.
+      const resetsAt = new Date(now.getTime() + 20 * 60 * 60 * 1000).toISOString();
+      const weeklyBar = (percent: number) => ({ percent, resetsAt, severity: 'normal', isActive: true });
+      await db.limitSnapshots.bulkAdd([
+        { capturedAt: hoursAgo(4), source: 'usage', session: null, weekly: weeklyBar(10) },
+        { capturedAt: hoursAgo(3), source: 'usage', session: null, weekly: weeklyBar(20) },
+        { capturedAt: hoursAgo(2), source: 'usage', session: null, weekly: weeklyBar(30) },
+        { capturedAt: hoursAgo(1), source: 'usage', session: null, weekly: weeklyBar(40) },
+        { capturedAt: now.toISOString(), source: 'usage', session: null, weekly: weeklyBar(50) },
+      ]);
+
+      render(<App />);
+
+      expect(await screen.findByText(/Average usage should stay around 2\.5%\/hour or lower to last until reset\./)).toBeTruthy();
+      expect(await screen.findByText(/Your recent pace is about \d+% above that\./)).toBeTruthy();
+    });
+
+    it('shows an anomaly note when the current run is well above the account\'s own recent baseline', async () => {
+      const now = new Date();
+      const hoursAgo = (h: number) => new Date(now.getTime() - h * 60 * 60 * 1000).toISOString();
+      const resetsAt = new Date(now.getTime() + 20 * 60 * 60 * 1000).toISOString();
+      const weeklyBar = (percent: number) => ({ percent, resetsAt, severity: 'normal', isActive: true });
+      await db.limitSnapshots.bulkAdd([
+        { capturedAt: hoursAgo(6), source: 'usage', session: null, weekly: weeklyBar(10) },
+        { capturedAt: hoursAgo(5), source: 'usage', session: null, weekly: weeklyBar(15) },
+        { capturedAt: hoursAgo(4), source: 'usage', session: null, weekly: weeklyBar(5) },
+        { capturedAt: hoursAgo(3), source: 'usage', session: null, weekly: weeklyBar(10) },
+        { capturedAt: hoursAgo(2), source: 'usage', session: null, weekly: weeklyBar(2) },
+        { capturedAt: hoursAgo(1), source: 'usage', session: null, weekly: weeklyBar(13) },
+        { capturedAt: now.toISOString(), source: 'usage', session: null, weekly: weeklyBar(24) },
+      ]);
+
+      render(<App />);
+
+      expect(await screen.findByText(/Usage is rising faster than its recent pattern/)).toBeTruthy();
+    });
+
+    it('lets you inspect an anomaly, correlating real local sessions against the anomalous window', async () => {
       await extensionMessenger.sendMessage('updateSettings', {
         daemonUrl: 'http://127.0.0.1:4317',
         daemonToken: 'test-token',
       });
+      const now = new Date();
+      const hoursAgo = (h: number) => new Date(now.getTime() - h * 60 * 60 * 1000).toISOString();
+      const resetsAt = new Date(now.getTime() + 20 * 60 * 60 * 1000).toISOString();
+      const weeklyBar = (percent: number) => ({ percent, resetsAt, severity: 'normal', isActive: true });
+      await db.limitSnapshots.bulkAdd([
+        { capturedAt: hoursAgo(6), source: 'usage', session: null, weekly: weeklyBar(10) },
+        { capturedAt: hoursAgo(5), source: 'usage', session: null, weekly: weeklyBar(15) },
+        { capturedAt: hoursAgo(4), source: 'usage', session: null, weekly: weeklyBar(5) },
+        { capturedAt: hoursAgo(3), source: 'usage', session: null, weekly: weeklyBar(10) },
+        { capturedAt: hoursAgo(2), source: 'usage', session: null, weekly: weeklyBar(2) },
+        { capturedAt: hoursAgo(1), source: 'usage', session: null, weekly: weeklyBar(13) },
+        { capturedAt: now.toISOString(), source: 'usage', session: null, weekly: weeklyBar(24) },
+      ]);
       vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
-        const requested = String(url);
-        if (requested.includes('/bootstrap')) {
-          return jsonResponse({ createdFolder: true, createdFiles: ['/tmp/x/CLAUDE.md'], skippedFiles: [] });
-        }
-        if (requested.includes('/config/projects')) return jsonResponse({ projects: [] });
-        if (requested.includes('/config')) {
+        if (String(url).includes('/sessions')) {
           return jsonResponse({
-            global: { path: '/x', exists: false, defaultMode: null, allow: [], ask: [], deny: [] },
-            project: null,
-            local: null,
-            hooks: [],
-            skills: [],
-            agents: [],
+            sessions: [
+              {
+                sessionId: 's1',
+                projectPath: 'payments-api',
+                firstActivity: hoursAgo(1.5),
+                lastActivity: hoursAgo(0.5),
+                totalTokens: 500,
+                inputTokens: 0,
+                outputTokens: 0,
+                cacheCreationTokens: 0,
+                cacheReadTokens: 0,
+                totalCost: 0,
+                modelsUsed: ['claude-sonnet-5'],
+                modelBreakdowns: [{ modelName: 'claude-sonnet-5', inputTokens: 300, outputTokens: 200, cacheCreationTokens: 0, cacheReadTokens: 0, cost: 0 }],
+              },
+            ],
+            totals: { totalTokens: 500, totalCost: 0, inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
           });
         }
-        throw new Error(`unexpected fetch: ${requested}`);
+        throw new Error(`unexpected fetch: ${String(url)}`);
       });
 
       render(<App />);
 
-      fireEvent.click(await screen.findByRole('tab', { name: 'New Project' }));
-      // Scoped to the New Project tabpanel — its target-dir field and Guardrails' own manual-path
-      // field share the same placeholder text, and every tab stays mounted simultaneously.
-      const panels = screen.getAllByRole('tabpanel', { hidden: true });
-      const newProjectPanel = within(panels[panels.length - 1]!);
+      await screen.findByText(/Usage is rising faster than its recent pattern/);
+      fireEvent.click(await screen.findByText('Inspect →'));
 
-      fireEvent.change(await newProjectPanel.findByPlaceholderText('/absolute/path/to/project'), { target: { value: '/tmp/x' } });
-      fireEvent.change(newProjectPanel.getByPlaceholderText('my-project'), { target: { value: 'x' } });
-      fireEvent.click(newProjectPanel.getByText('Set up project'));
-      await newProjectPanel.findByText(/1 file written/);
+      expect(await screen.findByText(/Largest local contributor observed during this period: payments-api/)).toBeTruthy();
+    });
 
-      fireEvent.click(newProjectPanel.getByText('Go to Guardrails →'));
+    it('tells a daemon fetch failure apart from a genuinely empty Usage Inspector result', async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        daemonUrl: 'http://127.0.0.1:4317',
+        daemonToken: 'test-token',
+      });
+      const now = new Date();
+      const hoursAgo = (h: number) => new Date(now.getTime() - h * 60 * 60 * 1000).toISOString();
+      const resetsAt = new Date(now.getTime() + 20 * 60 * 60 * 1000).toISOString();
+      const weeklyBar = (percent: number) => ({ percent, resetsAt, severity: 'normal', isActive: true });
+      await db.limitSnapshots.bulkAdd([
+        { capturedAt: hoursAgo(6), source: 'usage', session: null, weekly: weeklyBar(10) },
+        { capturedAt: hoursAgo(5), source: 'usage', session: null, weekly: weeklyBar(15) },
+        { capturedAt: hoursAgo(4), source: 'usage', session: null, weekly: weeklyBar(5) },
+        { capturedAt: hoursAgo(3), source: 'usage', session: null, weekly: weeklyBar(10) },
+        { capturedAt: hoursAgo(2), source: 'usage', session: null, weekly: weeklyBar(2) },
+        { capturedAt: hoursAgo(1), source: 'usage', session: null, weekly: weeklyBar(13) },
+        { capturedAt: now.toISOString(), source: 'usage', session: null, weekly: weeklyBar(24) },
+      ]);
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        if (String(url).includes('/sessions')) return new Response('', { status: 500 });
+        throw new Error(`unexpected fetch: ${String(url)}`);
+      });
 
-      const guardrailsPanel = within(panels[panels.length - 2]!); // config tabpanel, just before new-project
-      expect(panels[panels.length - 1]!.hasAttribute('hidden')).toBe(true); // New Project, now hidden
-      expect(await guardrailsPanel.findByText('Manual path active: /tmp/x')).toBeTruthy();
-      // Regression check: the visible input field itself must show the path too, not just the
-      // "Manual path active" summary text above it — ProjectPicker's own draft state used to be
-      // seeded from `manualProjectDir` only once, on mount, so a path set from outside (this
-      // handoff) never reached the field the user actually sees. New Project's own (still
-      // mounted, now-hidden) field also shows "/tmp/x", so this must stay scoped to Guardrails.
-      const guardrailsPathInput = guardrailsPanel.getByPlaceholderText('/absolute/path/to/project') as HTMLInputElement;
-      expect(guardrailsPathInput.value).toBe('/tmp/x');
+      render(<App />);
+
+      await screen.findByText(/Usage is rising faster than its recent pattern/);
+      fireEvent.click(await screen.findByText('Inspect →'));
+
+      expect(await screen.findByText(/Couldn.t reach the daemon/)).toBeTruthy();
+    });
+
+    it('omits the safe-pace line once a bar is at/over 100% (nothing left to pace against)', async () => {
+      // A future reset time, so this isolates the percent>=100 clamp rather than coincidentally
+      // also tripping the separate "reset already passed" null case.
+      const resetsAt = new Date(Date.now() + 20 * 60 * 60 * 1000).toISOString();
+      const fullBar = { percent: 100, resetsAt, severity: 'normal', isActive: true };
+      await db.limitSnapshots.add({ capturedAt: new Date().toISOString(), source: 'usage', session: fullBar, weekly: fullBar });
+      render(<App />);
+      await screen.findByText('Session (5h)');
+      expect(screen.queryByText(/Average usage should stay around/)).toBeNull();
+    });
+  });
+
+  describe('Guardrails / New Project removal (product split)', () => {
+    it('never renders a Guardrails or New Project tab, even with the daemon connected', async () => {
+      await extensionMessenger.sendMessage('updateSettings', {
+        daemonUrl: 'http://127.0.0.1:4317',
+        daemonToken: 'test-token',
+      });
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({}));
+      render(<App />);
+
+      await screen.findByRole('tab', { name: 'Sessions' });
+      expect(screen.queryByRole('tab', { name: 'Guardrails' })).toBeNull();
+      expect(screen.queryByRole('tab', { name: 'New Project' })).toBeNull();
+      expect(screen.queryByText('Experimental')).toBeNull();
+      expect(screen.queryByText(/Go to Guardrails/)).toBeNull();
     });
   });
 });

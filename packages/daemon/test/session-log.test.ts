@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exportSessionMarkdown, findSessionFiles, searchSessions } from '../src/adapters/session-log.js';
+import { exportSessionMarkdown, findSessionFiles, findSubagentSummaries, searchSessions } from '../src/adapters/session-log.js';
 import { withFixtureClaudeDir } from './helpers/fixture-claude-dir.js';
 
 describe('findSessionFiles', () => {
@@ -100,6 +100,65 @@ describe('searchSessions', () => {
         expect(secondPage.matches[0]!.sessionId).not.toBe(firstPage.matches[0]!.sessionId);
       }, 'session-log-dir');
     });
+  });
+});
+
+describe('findSubagentSummaries', () => {
+  it('finds every real subagent transcript for a session, pairing each with its own .meta.json', async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      const summaries = findSubagentSummaries(dir, '11111111-1111-4111-8111-111111111111');
+      expect(summaries.map((s) => s.agentId).sort()).toEqual(['test0001', 'test0002']);
+
+      const explore = summaries.find((s) => s.agentId === 'test0001')!;
+      expect(explore).toEqual({
+        agentId: 'test0001',
+        agentType: 'Explore',
+        description: 'Explore aggregate pipeline',
+        toolUseId: 'toolu_alpha0004', // matches the real tool_use id in the parent transcript
+        model: 'claude-sonnet-5',
+        inputTokens: 60,
+        outputTokens: 25,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+        totalTokens: 85,
+      });
+    }, 'session-log-dir');
+  });
+
+  it("treats Claude Code's '<synthetic>' model sentinel as no model, never as a second real model, while still counting its real usage", async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      const summaries = findSubagentSummaries(dir, '11111111-1111-4111-8111-111111111111');
+      const forked = summaries.find((s) => s.agentId === 'test0002')!;
+      // First line is '<synthetic>' (skipped for the model field, but its usage still counts);
+      // second line is the one real model, 'claude-sonnet-5'.
+      expect(forked.model).toBe('claude-sonnet-5');
+      expect(forked.inputTokens).toBe(31); // 1 (synthetic) + 30 (real)
+      expect(forked.outputTokens).toBe(13); // 1 (synthetic) + 12 (real)
+      expect(forked.totalTokens).toBe(44);
+      expect(forked.agentType).toBe('fork');
+      expect(forked.description).toBe('Review the refactor');
+    }, 'session-log-dir');
+  });
+
+  it('skips a malformed trailing line (a session log still being written) without throwing or losing the real lines before it', async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      // agent-test0002.jsonl's own last line is intentionally truncated/invalid JSON — this
+      // passing at all (totals above matching exactly) is the regression check: the malformed
+      // line neither crashes nor gets counted, and everything before it still does.
+      expect(() => findSubagentSummaries(dir, '11111111-1111-4111-8111-111111111111')).not.toThrow();
+    }, 'session-log-dir');
+  });
+
+  it('returns an empty array for a session with no subagents directory at all', async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      expect(findSubagentSummaries(dir, '22222222-2222-4222-8222-222222222222')).toEqual([]);
+    }, 'session-log-dir');
+  });
+
+  it('returns an empty array for an unknown session id', async () => {
+    await withFixtureClaudeDir(async (dir) => {
+      expect(findSubagentSummaries(dir, 'does-not-exist')).toEqual([]);
+    }, 'session-log-dir');
   });
 });
 

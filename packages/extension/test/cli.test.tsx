@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import backgroundDefinition from '../entrypoints/background.js';
@@ -26,7 +26,7 @@ describe('CliTab / SearchTab', () => {
 
   it('CliTab shows its own connect-the-daemon hint when not configured', async () => {
     render(<CliTab />);
-    expect(await screen.findByText(/see Claude Code CLI usage and retention warnings here/)).toBeTruthy();
+    expect(await screen.findByText(/see Claude Code CLI usage here/)).toBeTruthy();
   });
 
   it('SearchTab shows a search-specific connect-the-daemon hint when not configured', async () => {
@@ -228,6 +228,83 @@ describe('CliTab / SearchTab', () => {
       expect(await screen.findByText('No projects match "no-such-project".')).toBeTruthy();
     });
 
+    it('shows "No CLI usage recorded" only for a genuinely empty, successful result — not a failed one', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
+        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: {}, totals: zeroTotals });
+        if (requested.includes('/aggregate?by=model')) return jsonResponse({ models: [] });
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [], totals: zeroTotals });
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+      expect(await screen.findByText('No CLI usage recorded yet in the last 30 days.')).toBeTruthy();
+    });
+
+    it('shows a section-level error for a failed By-project request, without hiding By-model/By-session data that loaded fine', async () => {
+      const session = daemonSession({ sessionId: 's1', projectPath: '/proj-a', totalTokens: 500 });
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
+        if (requested.includes('/aggregate?by=project')) return new Response('', { status: 500 });
+        if (requested.includes('/aggregate?by=model')) {
+          return jsonResponse({ models: [{ modelName: 'claude-sonnet-5', inputTokens: 1, outputTokens: 1, cost: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }] });
+        }
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [session], totals: zeroTotals });
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+
+      expect(await screen.findByText(/Daemon returned 500/)).toBeTruthy();
+      // Partial success: the other two sections still render real data.
+      expect(screen.getByText('claude-sonnet-5')).toBeTruthy();
+      expect(screen.getByText('/proj-a')).toBeTruthy();
+      // Must not also claim a confirmed-empty result.
+      expect(screen.queryByText('No CLI usage recorded yet in the last 30 days.')).toBeNull();
+    });
+
+    it('shows a section-level error for a failed By-model request, without hiding By-project/By-session data that loaded fine', async () => {
+      const session = daemonSession({ sessionId: 's1', projectPath: '/proj-a', totalTokens: 500 });
+      const dailyEntry = { date: '2026-08-01', totalTokens: 500, totalCost: 0, inputTokens: 300, outputTokens: 200, cacheCreationTokens: 0, cacheReadTokens: 0, modelBreakdowns: [], modelsUsed: [] };
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
+        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: { '/proj-a': [dailyEntry] }, totals: zeroTotals });
+        if (requested.includes('/aggregate?by=model')) return new Response('', { status: 500 });
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [session], totals: zeroTotals });
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+
+      expect(await screen.findByText(/Daemon returned 500/)).toBeTruthy();
+      expect(screen.getAllByText('/proj-a').length).toBeGreaterThan(0);
+      expect(screen.queryByText('No CLI usage recorded yet in the last 30 days.')).toBeNull();
+    });
+
+    it('shows a section-level error for a failed sessions request, without hiding By-project/By-model data that loaded fine', async () => {
+      const dailyEntry = { date: '2026-08-01', totalTokens: 500, totalCost: 0, inputTokens: 300, outputTokens: 200, cacheCreationTokens: 0, cacheReadTokens: 0, modelBreakdowns: [], modelsUsed: [] };
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
+        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: { '/proj-a': [dailyEntry] }, totals: zeroTotals });
+        if (requested.includes('/aggregate?by=model')) {
+          return jsonResponse({ models: [{ modelName: 'claude-sonnet-5', inputTokens: 1, outputTokens: 1, cost: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }] });
+        }
+        if (requested.includes('/sessions')) return new Response('', { status: 500 });
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+
+      expect(await screen.findByText(/Daemon returned 500/)).toBeTruthy();
+      expect(screen.getByText('/proj-a')).toBeTruthy();
+      expect(screen.getByText('claude-sonnet-5')).toBeTruthy();
+      expect(screen.queryByText('No CLI usage recorded yet in the last 30 days.')).toBeNull();
+    });
+
     it('shows a week-over-week delta computed from the same 30-day daily fetch, no new call', async () => {
       // Dates relative to the real wall clock at test-run time, not a hardcoded date — avoids
       // depending on (or needing to fake) the system clock, since weekOverWeek() buckets off
@@ -304,7 +381,7 @@ describe('CliTab / SearchTab', () => {
       expect(screen.getByText('CLI (est.)')).toBeTruthy();
     });
 
-    it('renders retention warnings alongside the attribution panel', async () => {
+    it('renders retention warnings in the Sessions tab, above search', async () => {
       const now = new Date();
       const oldEnough = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000).toISOString();
       const session = {
@@ -323,7 +400,23 @@ describe('CliTab / SearchTab', () => {
       };
       vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
         const requested = String(url);
-        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [session], totals: zeroTotals });
+        return jsonResponse({});
+      });
+
+      render(<SearchTab />);
+
+      // Above the search box, not buried behind it.
+      expect(await screen.findByText('Sessions nearing cleanup')).toBeTruthy();
+      expect(await screen.findByText('Search CLI sessions')).toBeTruthy();
+    });
+
+    it('still shows real CLI usage in the Activity tab for a session that is also nearing retention cleanup', async () => {
+      const oldEnough = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString();
+      const session = daemonSession({ sessionId: 's1', projectPath: '/proj-a', lastActivity: oldEnough, totalTokens: 1000 });
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: { ...zeroTotals, totalTokens: 1000 } });
         if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: {}, totals: zeroTotals });
         if (requested.includes('/aggregate?by=model')) return jsonResponse({ models: [] });
         if (requested.includes('/sessions')) return jsonResponse({ sessions: [session], totals: zeroTotals });
@@ -332,12 +425,10 @@ describe('CliTab / SearchTab', () => {
 
       render(<CliTab />);
 
-      // Time-sensitive, so it renders above the attribution panel rather than inside it.
-      expect(await screen.findByText('Sessions nearing cleanup')).toBeTruthy();
-      // The same session also shows up in the attribution panel's own By-session table below —
-      // "no usage" would be wrong here, since this session's tokens are real CLI usage.
       expect(await screen.findByText('By session')).toBeTruthy();
       expect(screen.queryByText('No CLI usage recorded yet in the last 30 days.')).toBeNull();
+      // Retention warnings moved to the Sessions tab — not duplicated here.
+      expect(screen.queryByText('Sessions nearing cleanup')).toBeNull();
     });
 
     it('only requests tool call summaries in the export once the checkbox is checked', async () => {
@@ -351,6 +442,50 @@ describe('CliTab / SearchTab', () => {
       const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
         const requested = String(url);
         if (requested.includes('/export')) return jsonResponse('# Claude Code session');
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [session], totals: zeroTotals });
+        return jsonResponse({});
+      });
+
+      render(<SearchTab />);
+      const retentionHeading = await screen.findByText('Sessions nearing cleanup');
+      // Scoped to the retention card specifically — SessionSearch now shares this tab and has
+      // its own, separate "Include tool calls" checkbox for its own export action.
+      const retentionCard = within(retentionHeading.closest('section')!);
+
+      fireEvent.click(retentionCard.getByText('Export markdown'));
+      await vi.waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/sessions\/s1\/export$/), expect.anything());
+      });
+
+      fireEvent.click(retentionCard.getByLabelText('Include tool calls in export (as short summaries)'));
+      fireEvent.click(retentionCard.getByText('Export markdown'));
+      await vi.waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/sessions/s1/export?toolCalls=true'), expect.anything());
+      });
+    });
+
+    it('lazily loads a session\'s subagent activity only once its row is expanded, labeled as separate from the session total', async () => {
+      const session = daemonSession({ sessionId: 's1', projectPath: '/proj-a', totalTokens: 1000 });
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/sessions/s1/subagents')) {
+          return jsonResponse({
+            subagents: [
+              {
+                agentId: 'a1',
+                agentType: 'Explore',
+                description: 'Explore aggregate pipeline',
+                toolUseId: 'toolu_1',
+                model: 'claude-sonnet-5',
+                inputTokens: 60,
+                outputTokens: 25,
+                cacheCreationTokens: 0,
+                cacheReadTokens: 0,
+                totalTokens: 85,
+              },
+            ],
+          });
+        }
         if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
         if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: {}, totals: zeroTotals });
         if (requested.includes('/aggregate?by=model')) return jsonResponse({ models: [] });
@@ -359,18 +494,39 @@ describe('CliTab / SearchTab', () => {
       });
 
       render(<CliTab />);
-      await screen.findByText('Sessions nearing cleanup');
+      await screen.findByText('By session');
 
-      fireEvent.click(screen.getByText('Export markdown'));
-      await vi.waitFor(() => {
-        expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/sessions\/s1\/export$/), expect.anything());
+      expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/subagents'))).toBe(false);
+
+      fireEvent.click(screen.getByText('Show'));
+
+      expect(await screen.findByText(/Explore — Explore aggregate pipeline: 85/)).toBeTruthy();
+      expect(screen.getByText(/tracked separately from the session total above/)).toBeTruthy();
+
+      fireEvent.click(screen.getByText('Hide'));
+      expect(screen.queryByText(/Explore — Explore aggregate pipeline/)).toBeNull();
+    });
+
+    it('tells a daemon that lacks the subagent route apart from a session with genuinely no subagents', async () => {
+      const session = daemonSession({ sessionId: 's1', projectPath: '/proj-a', totalTokens: 1000 });
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        // An older, already-paired daemon simply doesn't have this route yet.
+        if (requested.includes('/sessions/s1/subagents')) return jsonResponse({ error: 'not_found' }, 404);
+        if (requested.includes('/aggregate?by=day')) return jsonResponse({ daily: [], totals: zeroTotals });
+        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: {}, totals: zeroTotals });
+        if (requested.includes('/aggregate?by=model')) return jsonResponse({ models: [] });
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [session], totals: zeroTotals });
+        return jsonResponse({});
       });
 
-      fireEvent.click(screen.getByLabelText('Include tool calls in export (as short summaries)'));
-      fireEvent.click(screen.getByText('Export markdown'));
-      await vi.waitFor(() => {
-        expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/sessions/s1/export?toolCalls=true'), expect.anything());
-      });
+      render(<CliTab />);
+      await screen.findByText('By session');
+      fireEvent.click(screen.getByText('Show'));
+
+      expect(await screen.findByText(/older version that doesn.t support it yet/)).toBeTruthy();
+      // Must not read as a confirmed, genuine zero-subagent result.
+      expect(screen.queryByText('No subagent activity observed for this session.')).toBeNull();
     });
   });
 });

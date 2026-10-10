@@ -4,6 +4,7 @@ import type { DaemonHealth, Settings } from '../../lib/protocol.js';
 import { extensionMessenger } from '../../lib/messaging.js';
 import { copyInstallCommand, DAEMON_INSTALL_COMMANDS } from '../../lib/daemon-install.js';
 import { BackupRestoreSection } from './BackupRestore.tsx';
+import { Diagnostics } from './Diagnostics.tsx';
 import { SetupChecklist } from './SetupChecklist.tsx';
 import { styles } from './styles.ts';
 
@@ -198,6 +199,7 @@ export default function SettingsPanel() {
       </div>
 
       <BackupRestoreSection settings={settings} onSettingsRestored={setSettings} />
+      <Diagnostics settings={settings} daemonHealth={daemonHealth} />
       </section>
     </>
   );
