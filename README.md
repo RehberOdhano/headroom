@@ -224,7 +224,7 @@ packages/
 
 ```sh
 pnpm install
-pnpm -r run test         # 463 tests across the three packages as of this writing
+pnpm -r run test         # 467 tests across the three packages as of this writing
 pnpm -r run typecheck
 pnpm -r run build
 pnpm --filter @headroom/extension run test:e2e   # builds, then drives the real extension in Chromium against a stubbed claude.ai
