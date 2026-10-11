@@ -1,6 +1,6 @@
 # headroom — Claude Usage Companion
 
-<img src="docs/readme-cover.png" alt="headroom — Claude Usage Companion: see your session and weekly limits coming, with a forecast, not just a percentage" width="100%" />
+<img src="docs/readme-cover.png" alt="headroom — Claude Usage Companion: know your usage, catch what's unusual — session/weekly bars, burn-rate forecast, and sustainable pace, all from local data" width="100%" />
 
 [**Install from the Chrome Web Store →**](https://chromewebstore.google.com/detail/chjbjdabpficejgogljohhlobfaehepl)
 (Edge can install the same listing directly; Firefox builds from source — see Installation below)
@@ -39,17 +39,23 @@ pay-as-you-go usage.
 
 <table>
   <tr>
-    <td align="center" width="33%">
-      <img src="docs/screenshot-popup.png" width="260" alt="Popup showing session and weekly usage bars, with a forecast warning that a limit will be hit before it resets" /><br />
-      <sub>Popup — at-a-glance bars and a burn-rate warning</sub>
+    <td align="center" width="50%">
+      <img src="docs/screenshot-popup.png" width="380" alt="Popup showing session and weekly usage bars, a forecast warning that a limit will be hit before it resets, and an anomaly notice" /><br />
+      <sub>Popup — at-a-glance bars, a burn-rate warning, and anomaly detection</sub>
     </td>
-    <td align="center" width="33%">
-      <img src="docs/screenshot-usage-forecast.png" width="260" alt="Dashboard Overview tab, showing multi-week history charts for session and weekly limits" /><br />
-      <sub>Overview — multi-week history, 24h/7d/30d</sub>
+    <td align="center" width="50%">
+      <img src="docs/screenshot-usage-forecast.png" width="380" alt="Dashboard Overview tab, showing multi-week history charts, a burn-rate forecast, and a sustainable-pace estimate for session and weekly limits" /><br />
+      <sub>Overview — history, forecast, and sustainable pace</sub>
     </td>
-    <td align="center" width="33%">
-      <img src="docs/screenshot-cli-attribution.png" width="260" alt="Dashboard Activity tab, showing token totals by project, model, and individual session, each filterable by typing" /><br />
-      <sub>Activity — by project, model, and session</sub>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshot-subagents.png" width="380" alt="Dashboard Sessions tab, with a CLI session expanded to show which subagents ran inside it, their own token totals, and models, tracked separately from the session total" /><br />
+      <sub>Subagent visibility — tracked separately, never added to the session total</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshot-sessions.png" width="380" alt="Dashboard Sessions tab, showing retention warnings for sessions nearing Claude Code's 30-day cleanup, and full-text search across past CLI sessions with a one-click resume command" /><br />
+      <sub>Sessions — search, resume, export, and retention warnings</sub>
     </td>
   </tr>
 </table>
@@ -224,7 +230,7 @@ packages/
 
 ```sh
 pnpm install
-pnpm -r run test         # 467 tests across the three packages as of this writing
+pnpm -r run test         # 470 tests across the three packages as of this writing
 pnpm -r run typecheck
 pnpm -r run build
 pnpm --filter @headroom/extension run test:e2e   # builds, then drives the real extension in Chromium against a stubbed claude.ai
