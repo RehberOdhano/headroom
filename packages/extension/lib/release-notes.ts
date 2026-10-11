@@ -1,6 +1,12 @@
 /** What's-new copy shown once after an update. Add an entry per release worth announcing;
  *  versions without one show nothing. */
 export const RELEASE_NOTES: Record<string, string[]> = {
+  '0.3.1': [
+    'Refreshed the popup and Settings pages to match the dashboard’s look, including dark mode.',
+    'Redesigned the subagent list in Activity → By session as an expandable card, with a scroll limit for sessions with many subagents.',
+    'Fixed: Activity could go blank if just one section (like the daily total) failed to load — the rest of the tab now keeps working.',
+    'Fixed: "Sessions nearing cleanup" could go silent if the check itself failed — it now tells you when that happens.',
+  ],
   '0.3.0': [
     'Added: a sustainable "safe pace" next to each bar — how slow usage needs to average to last until reset.',
     'Added: anomaly detection — flags when a bar is rising well faster than its own recent pattern.',
