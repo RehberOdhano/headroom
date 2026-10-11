@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import type { DaemonHealth, Settings } from '../../lib/protocol.js';
 import { extensionMessenger } from '../../lib/messaging.js';
 import { copyInstallCommand, DAEMON_INSTALL_COMMANDS } from '../../lib/daemon-install.js';
 import { BackupRestoreSection } from './BackupRestore.tsx';
 import { Diagnostics } from './Diagnostics.tsx';
 import { SetupChecklist } from './SetupChecklist.tsx';
-import { styles } from './styles.ts';
 
 type TestStatus = 'idle' | 'testing' | 'ok' | 'error';
 type PairingUiState = 'checking' | 'connected' | 'waiting' | 'already_paired';
@@ -80,127 +78,153 @@ export default function SettingsPanel() {
   return (
     <>
       <SetupChecklist settings={settings} daemonHealth={daemonHealth} />
-      <section style={styles.section}>
-        <h2 style={styles.heading}>Settings</h2>
 
-      <label style={styles.checkboxRow}>
-        <input
-          type="checkbox"
-          checked={settings.badgeEnabled}
-          onChange={(event) => void update({ badgeEnabled: event.target.checked })}
-        />
-        Show a small usage badge on claude.ai
-      </label>
+      <section className="card">
+        <div className="card-header">
+          <h2 className="card-title">Settings</h2>
+        </div>
 
-      <label style={{ ...styles.checkboxRow, marginTop: 8 }}>
-        <input
-          type="checkbox"
-          checked={settings.paceAlertEnabled}
-          onChange={(event) => void update({ paceAlertEnabled: event.target.checked })}
-        />
-        Warn me when I'm on pace to run out before a limit resets
-      </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={settings.badgeEnabled}
+            onChange={(event) => void update({ badgeEnabled: event.target.checked })}
+          />
+          Show a small usage badge on claude.ai
+        </label>
 
-      <div style={styles.daemonBlock}>
-        <label style={styles.fieldLabel}>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={settings.paceAlertEnabled}
+            onChange={(event) => void update({ paceAlertEnabled: event.target.checked })}
+          />
+          Warn me when I'm on pace to run out before a limit resets
+        </label>
+
+        <label className="field">
           Keep usage history for (days)
           <input
             type="number"
             min={1}
+            className="field-input"
             value={settings.snapshotRetentionDays}
             onChange={(event) => {
               const days = Number(event.target.value);
               if (Number.isFinite(days) && days >= 1) void update({ snapshotRetentionDays: days });
             }}
-            style={styles.input}
           />
         </label>
-        <p style={styles.hint}>Notify me when a bar reaches:</p>
-        <div style={styles.thresholdRow}>
-          <label style={styles.thresholdField}>
+
+        <p className="hint">Notify me when a bar reaches:</p>
+        <div className="threshold-row">
+          <label className="field threshold-field">
             Warn at (%)
             <input
               type="number"
               min={1}
               max={100}
+              className="field-input"
               value={settings.alertThresholds[0] ?? ''}
               onChange={(event) => void updateThreshold(0, event.target.value)}
-              style={styles.input}
             />
           </label>
-          <label style={styles.thresholdField}>
+          <label className="field threshold-field">
             Alert at (%)
             <input
               type="number"
               min={1}
               max={100}
+              className="field-input"
               value={settings.alertThresholds[1] ?? ''}
               onChange={(event) => void updateThreshold(1, event.target.value)}
-              style={styles.input}
             />
           </label>
         </div>
+      </section>
 
-      </div>
-
-      <div style={styles.daemonBlock}>
-        <p style={styles.hint}>
-          Local daemon (optional — unlocks CLI attribution, session search, retention warnings).
-          Run <code>{DAEMON_INSTALL_COMMANDS}</code> once in a terminal — the extension pairs with it
-          automatically after that, nothing to copy or paste.{' '}
-          <button type="button" onClick={() => void copyInstallCommand()}>
+      <section className="card">
+        <div className="card-header">
+          <h2 className="card-title">Local daemon</h2>
+        </div>
+        <p className="hint">
+          Optional — unlocks CLI attribution, session search, retention warnings. Run this once in a
+          terminal — the extension pairs with it automatically after that, nothing to copy or paste.
+        </p>
+        <div className="install-command">
+          <code>{DAEMON_INSTALL_COMMANDS}</code>
+          <button type="button" className="btn" onClick={() => void copyInstallCommand()}>
             Copy command
           </button>
-        </p>
+        </div>
 
-        <div style={styles.pairingRow}>
+        <div className="status-row">
           {pairingUi === 'connected' && (
-            <span style={styles.ok}>
-              <span style={styles.pairingDot}>●</span> Connected automatically
-            </span>
+            <>
+              <span className="status-dot status-dot-success" />
+              <span className="status-text-success">Connected automatically</span>
+            </>
           )}
-          {pairingUi === 'waiting' && <span>Waiting for the daemon…</span>}
-          {pairingUi === 'checking' && <span>Checking…</span>}
+          {pairingUi === 'waiting' && (
+            <>
+              <span className="status-dot status-dot-muted" />
+              <span>Waiting for the daemon…</span>
+            </>
+          )}
+          {pairingUi === 'checking' && (
+            <>
+              <span className="status-dot status-dot-muted" />
+              <span>Checking…</span>
+            </>
+          )}
           {pairingUi === 'already_paired' && (
-            <span style={styles.error}>
-              Already paired with another extension — run <code>claude-usage-daemon install</code> again to
-              reconnect this one.
-            </span>
+            <>
+              <span className="status-dot status-dot-error" />
+              <span className="status-text-error">
+                Already paired with another extension — run <code>claude-usage-daemon install</code> again to
+                reconnect this one.
+              </span>
+            </>
           )}
-          <button type="button" onClick={checkPairingNow} disabled={pairingUi === 'checking'}>
+          <button type="button" className="btn" onClick={checkPairingNow} disabled={pairingUi === 'checking'}>
             Check now
           </button>
         </div>
 
         {pairingUi === 'connected' && daemonHealth && (
-          <p style={daemonHealth.ok ? styles.ok : styles.error}>
-            <span style={styles.pairingDot}>●</span>{' '}
-            {daemonHealth.ok ? `Daemon reachable, checked ${timeAgo(daemonHealth.checkedAt)}` : `Daemon unreachable — last checked ${timeAgo(daemonHealth.checkedAt)}`}
-          </p>
+          <div className="status-row">
+            <span className={`status-dot ${daemonHealth.ok ? 'status-dot-success' : 'status-dot-error'}`} />
+            <span className={daemonHealth.ok ? 'status-text-success' : 'status-text-error'}>
+              {daemonHealth.ok
+                ? `Daemon reachable, checked ${timeAgo(daemonHealth.checkedAt)}`
+                : `Daemon unreachable — last checked ${timeAgo(daemonHealth.checkedAt)}`}
+            </span>
+          </div>
         )}
 
-        <details style={styles.advanced}>
-          <summary style={styles.advancedSummary}>Advanced: manual token</summary>
-          <label style={styles.fieldLabel}>
+        <details className="advanced">
+          <summary className="advanced-summary">Advanced: manual token</summary>
+          <label className="field">
             Token
             <input
               type="password"
+              className="field-input"
               value={settings.daemonToken}
               onChange={(event) => void update({ daemonToken: event.target.value })}
-              style={styles.input}
             />
           </label>
-          <button type="button" onClick={testConnection} disabled={testStatus === 'testing'}>
-            {testStatus === 'testing' ? 'Testing…' : 'Test connection'}
-          </button>
-          {testStatus === 'ok' && <span style={styles.ok}>Connected</span>}
-          {testStatus === 'error' && <span style={styles.error}>Could not connect</span>}
+          <div className="status-row">
+            <button type="button" className="btn" onClick={testConnection} disabled={testStatus === 'testing'}>
+              {testStatus === 'testing' ? 'Testing…' : 'Test connection'}
+            </button>
+            {testStatus === 'ok' && <span className="ok-text">Connected</span>}
+            {testStatus === 'error' && <span className="error-text">Could not connect</span>}
+          </div>
         </details>
-      </div>
+      </section>
 
       <BackupRestoreSection settings={settings} onSettingsRestored={setSettings} />
       <Diagnostics settings={settings} daemonHealth={daemonHealth} />
-      </section>
     </>
   );
 }

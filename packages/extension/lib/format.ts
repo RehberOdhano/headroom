@@ -122,6 +122,13 @@ export function describeSafePace(safePace: SafePace | null): string | null {
 // `severity` is an open string per packages/shared's schema (only "normal"/"warning" observed
 // so far) — anything unrecognized falls back to the neutral color rather than erroring, so a
 // new severity value degrades gracefully instead of breaking the popup.
+//
+// Deliberately hardcoded hex, not a `var(--color-*)` reference: `badge.content.ts` calls this
+// from inside the claude.ai page itself (a MAIN-world content script), where none of this
+// extension's own CSS custom properties are in scope — a var() there would resolve to nothing.
+// These values are already chosen to match the shared tokens' light-mode palette (blue=normal/
+// accent, amber=warning, red=critical) so the three rendering contexts (claude.ai badge, popup,
+// dashboard) read consistently even though only the latter two get dark-mode-aware tokens.
 const SEVERITY_COLORS: Record<string, string> = {
   normal: '#3b82f6',
   warning: '#f59e0b',

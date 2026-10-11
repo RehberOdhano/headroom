@@ -1,65 +1,4 @@
-:root {
-  color-scheme: light dark;
-
-  --color-bg: #ffffff;
-  --color-bg-subtle: #f7f8fa;
-  --color-surface: #ffffff;
-  --color-border: #e5e7eb;
-  --color-border-strong: #d1d5db;
-  --color-text: #111827;
-  --color-text-muted: #5b6472;
-  --color-text-faint: #6b7280;
-  --color-accent: #3b82f6;
-  --color-accent-strong: #2563eb;
-  --color-accent-bg: #eff6ff;
-  --color-warning: #b45309;
-  --color-warning-bg: #fffbeb;
-  --color-warning-border: #fde68a;
-  --color-danger: #dc2626;
-  --color-success: #16a34a;
-
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-pill: 999px;
-
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 1px rgba(15, 23, 42, 0.03);
-  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
-
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-
-  --font-sans:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #0c1015;
-    --color-bg-subtle: #12171e;
-    --color-surface: #161c24;
-    --color-border: #262e38;
-    --color-border-strong: #333d4a;
-    --color-text: #e7e9ec;
-    --color-text-muted: #97a1af;
-    --color-text-faint: #8791a0;
-    --color-accent: #5b9dff;
-    --color-accent-strong: #7db2ff;
-    --color-accent-bg: rgba(91, 157, 255, 0.14);
-    --color-warning: #f5a524;
-    --color-warning-bg: rgba(245, 165, 36, 0.1);
-    --color-warning-border: rgba(245, 165, 36, 0.35);
-    --color-danger: #f87171;
-    --color-success: #34d399;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
-  }
-}
+@import '../../lib/styles/tokens.css';
 
 * {
   box-sizing: border-box;
@@ -513,13 +452,7 @@ body {
   border-radius: var(--radius-sm);
   padding: 8px 10px;
   font-size: 0.8rem;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  * {
-    transition: none !important;
-    scroll-behavior: auto !important;
-  }
+  font-family: var(--font-mono);
 }
 
 /* Stat cards (CLI attribution) */
@@ -701,12 +634,33 @@ body {
 .warning-title {
   font-family: var(--font-mono);
   font-size: 0.82rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .warning-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 2px;
   font-size: 0.75rem;
   color: var(--color-text-muted);
-  margin-top: 2px !important;
+  margin-top: 4px !important;
+}
+
+.warning-meta span:not(:first-child)::before {
+  content: '·';
+  margin: 0 6px;
+  color: var(--color-text-faint);
+}
+
+.warning-days {
+  font-weight: 650;
+  color: var(--color-warning);
+}
+
+.warning-days-urgent {
+  color: var(--color-danger);
 }
 
 /* Activity tab's By-project/By-session filter boxes — same input style as search, just always
@@ -739,5 +693,319 @@ body {
   font-size: 0.78rem;
   margin-top: var(--space-6);
   line-height: 1.6;
+}
+
+/* Anomaly notice — reusable amber alert: icon + headline + optional note + optional action.
+   Never implies causation itself; all wording stays owned by the caller. */
+.anomaly-notice {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.anomaly-notice-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.anomaly-notice-icon {
+  color: var(--color-warning);
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.anomaly-notice-headline {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-warning);
+  line-height: 1.4;
+}
+
+.anomaly-notice-note {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.anomaly-notice-action {
+  margin-top: var(--space-3);
+}
+
+/* Safe-pace / sustainable-pace: a labeled, scannable number rather than text buried mid-paragraph. */
+.metric-row {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--color-border);
+}
+
+.metric-label {
+  font-size: 0.7rem;
+  font-weight: 650;
+  color: var(--color-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 2px;
+}
+
+.metric-value {
+  font-size: 1.1rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+.metric-caption {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin: 4px 0 0;
+  line-height: 1.5;
+}
+
+/* Usage Inspector — each state reads distinctly instead of collapsing to the same muted hint. */
+.inspector-state {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.inspector-state-loading {
+  color: var(--color-text-muted);
+  background: var(--color-bg-subtle);
+}
+
+.inspector-state-unavailable {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+
+.inspector-state-empty {
+  color: var(--color-text-muted);
+  background: var(--color-bg-subtle);
+  border: 1px dashed var(--color-border-strong);
+}
+
+.inspector-findings {
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.inspector-findings p {
+  margin: 0 0 var(--space-2);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.inspector-findings p:last-child {
+  margin-bottom: 0;
+}
+
+/* What changed — compact labeled rows instead of undifferentiated paragraphs. Label text comes
+   from a small lookup over the finding's own `kind` discriminant (see WhatChanged.tsx) — no new
+   domain data, purely a display label for a category the data already carries. */
+.change-row {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.change-row:last-child {
+  border-bottom: none;
+}
+
+.change-label {
+  flex-shrink: 0;
+  width: 6.5rem;
+  font-size: 0.68rem;
+  font-weight: 650;
+  color: var(--color-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 2px;
+}
+
+.change-text {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+/* Numeric table columns — right-aligned, still tabular-figure. */
+.data-table th.num,
+.data-table td.num {
+  text-align: right;
+}
+
+/* Sessions list — each session is its own bordered card (not a shared-border table), so an
+   expanded one can carry its own highlighted border without visually fusing into its neighbors. */
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.session-row {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+}
+
+/* The one visibly "open" card — an accent border ties its header to the expanded content below
+   it, the same way a focused/selected state would. */
+.session-row-expanded {
+  border-color: var(--color-accent);
+}
+
+.session-row-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.session-chevron {
+  flex: 0 0 auto;
+  color: var(--color-text-faint);
+  transition: transform var(--transition-fast);
+}
+
+.session-chevron-open {
+  transform: rotate(90deg);
+}
+
+.session-project {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-last-active {
+  flex: 0 0 150px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.session-tokens {
+  flex: 0 0 110px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-row-body {
+  padding: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.subagent-summary {
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--color-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: var(--space-3) 0 0;
+}
+
+/* Caps a long subagent list to its own scroll region instead of letting it grow the card without
+   bound — a session with a couple dozen subagents was otherwise pushing every other session card
+   far down the page any time it was expanded. */
+.subagent-list-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  margin-top: var(--space-3);
+}
+
+.subagent-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.subagent-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.82rem;
+}
+
+.subagent-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.subagent-type {
+  flex: 0 0 100px;
+  font-weight: 600;
+}
+
+.subagent-description {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--color-text-muted);
+}
+
+.subagent-tokens {
+  flex: 0 0 72px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.subagent-model {
+  flex: 0 0 150px;
+  text-align: right;
+  color: var(--color-text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status/health indicator — green communicates operational health (daemon connected, a check
+   passing), never ordinary usage severity, which stays blue/amber/red. */
+.status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.status-dot-success {
+  background: var(--color-success);
+}
+
+.status-dot-error {
+  background: var(--color-danger);
+}
+
+.status-dot-muted {
+  background: var(--color-text-faint);
+}
+
+.status-text-success {
+  color: var(--color-success);
+}
+
+.status-text-error {
+  color: var(--color-danger);
 }
 

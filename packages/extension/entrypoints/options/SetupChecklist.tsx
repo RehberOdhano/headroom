@@ -1,7 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../lib/db.js';
 import type { DaemonHealth, Settings } from '../../lib/protocol.js';
-import { styles } from './styles.ts';
 
 interface ChecklistItem {
   label: string;
@@ -45,20 +44,22 @@ export function SetupChecklist({ settings, daemonHealth }: { settings: Settings;
   if (doneCount === visible.length) return null; // fully set up — nothing to flag
 
   return (
-    <section style={styles.section}>
-      <h2 style={styles.heading}>
-        Setup status ({doneCount}/{visible.length})
-      </h2>
-      <ul style={styles.checklist}>
+    <section className="card">
+      <div className="card-header">
+        <h2 className="card-title">
+          Setup status ({doneCount}/{visible.length})
+        </h2>
+      </div>
+      <ul className="checklist">
         {visible.map((item) => (
-          <li key={item.label} style={styles.checklistItem}>
-            <span style={item.done ? styles.checklistDone : styles.checklistPending}>{item.done ? '✓' : '○'}</span>{' '}
+          <li key={item.label} className="checklist-item">
+            <span className={item.done ? 'checklist-done' : 'checklist-pending'}>{item.done ? '✓' : '○'}</span>
             {item.label}
           </li>
         ))}
       </ul>
       {!capturedSnapshot && usageParseError && (
-        <p style={styles.error}>
+        <p className="error-text" style={{ marginTop: 'var(--space-3)' }}>
           claude.ai's usage data couldn't be read (its response format may have changed). This has
           been logged locally — it should resolve with the next extension update.
         </p>

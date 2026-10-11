@@ -1,0 +1,283 @@
+@import '../../lib/styles/tokens.css';
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.popup {
+  width: 300px;
+  padding: var(--space-4);
+}
+
+.popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.popup-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.popup-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.popup-title {
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.popup-refresh {
+  appearance: none;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.popup-refresh:hover:not(:disabled) {
+  color: var(--color-accent-strong);
+}
+
+.popup-refresh:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.popup-refresh:focus-visible {
+  outline: 2px solid var(--color-accent-strong);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Headline / rating banners. "ok" reuses the operational-health green — a forecast's "on track"
+   is a status readout, not an ordinary usage level, so this doesn't conflict with the rule that
+   normal usage bars stay blue (see .popup-bar-fill below, and lib/format.ts's barColor). */
+.popup-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+
+.popup-banner-ok {
+  background: var(--color-success-bg);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.popup-banner-warn {
+  background: var(--color-warning-bg);
+  border-color: var(--color-warning-border);
+  color: var(--color-warning);
+}
+
+.popup-banner-alert {
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* Anomaly notice — same shell as the dashboard's (AnomalyNotice.tsx), restated here since the
+   popup and dashboard are separate documents with separate stylesheets. */
+.anomaly-notice {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+
+.anomaly-notice-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.anomaly-notice-icon {
+  color: var(--color-warning);
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.anomaly-notice-headline {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-warning);
+  line-height: 1.4;
+}
+
+.anomaly-notice-note {
+  margin: 4px 0 0;
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.anomaly-notice-action {
+  margin-top: var(--space-2);
+}
+
+.popup-rating {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  margin: 0 0 var(--space-3);
+}
+
+.popup-rating a {
+  color: var(--color-accent);
+}
+
+/* Usage bars */
+.popup-bar {
+  margin-bottom: var(--space-3);
+}
+
+.popup-bar-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.8rem;
+  margin-bottom: 4px;
+}
+
+.popup-bar-title {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.popup-bar-value {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.popup-bar-track {
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.popup-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  transition: width var(--transition-slow);
+}
+
+/* Extra credits */
+.popup-extra-credits {
+  margin: 0 0 var(--space-3);
+}
+
+.popup-extra-credits-amount {
+  font-size: 0.74rem;
+  color: var(--color-text-faint);
+  margin: 2px 0 0;
+}
+
+/* Freshness / meta — deliberately the lowest-weight text on the page. */
+.popup-updated {
+  font-size: 0.72rem;
+  color: var(--color-text-faint);
+  margin: var(--space-2) 0 0;
+  line-height: 1.4;
+}
+
+/* CTA — a deliberate text-action, not a default anchor underline. */
+.popup-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  text-decoration: none;
+  margin-top: 6px;
+}
+
+.popup-cta:hover {
+  color: var(--color-accent-strong);
+}
+
+.popup-cta:focus-visible,
+.popup-secondary-link:focus-visible {
+  outline: 2px solid var(--color-accent-strong);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Empty/error states */
+.popup-state {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-2);
+}
+
+.popup-state-error {
+  color: var(--color-danger);
+}
+
+.popup-state-cta {
+  display: inline-block;
+  margin-top: var(--space-2);
+  padding: 7px 14px;
+  background: var(--color-accent-strong);
+  color: #ffffff;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.popup-state-cta:hover {
+  background: var(--color-accent);
+}
+
+.popup-state-cta:focus-visible {
+  outline: 2px solid var(--color-accent-strong);
+  outline-offset: 2px;
+}
+
+.popup-secondary-link {
+  font-size: 0.78rem;
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.popup-secondary-link:hover {
+  color: var(--color-accent-strong);
+  text-decoration: underline;
+}

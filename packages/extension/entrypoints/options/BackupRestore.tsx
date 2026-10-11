@@ -5,7 +5,6 @@ import { buildBackup, fingerprintsToRestore, parseBackup, snapshotsToRestore, ty
 import { db } from '../../lib/db.js';
 import { downloadJson } from '../../lib/downloads.js';
 import { extensionMessenger } from '../../lib/messaging.js';
-import { styles } from './styles.ts';
 
 type RestorePreview = { data: BackupFile; newSnapshots: number; newFingerprints: number };
 
@@ -74,16 +73,19 @@ export function BackupRestoreSection({ settings, onSettingsRestored }: { setting
   }
 
   return (
-    <div style={styles.daemonBlock}>
-      <p style={styles.hint}>
+    <section className="card">
+      <div className="card-header">
+        <h2 className="card-title">Data management</h2>
+      </div>
+      <p className="hint">
         Everything above lives only in this browser profile — clearing site data or moving to a new machine loses it for
         good. Back it up to a file you keep, and restore it later.
       </p>
-      <div style={styles.backupRow}>
-        <button type="button" onClick={downloadBackup} disabled={!limitSnapshots || !configFingerprints}>
+      <div className="backup-row">
+        <button type="button" className="btn" onClick={downloadBackup} disabled={!limitSnapshots || !configFingerprints}>
           Download backup
         </button>
-        <button type="button" onClick={() => fileInputRef.current?.click()}>
+        <button type="button" className="btn" onClick={() => fileInputRef.current?.click()}>
           Restore from file…
         </button>
         <input
@@ -96,10 +98,10 @@ export function BackupRestoreSection({ settings, onSettingsRestored }: { setting
         />
       </div>
 
-      {restoreError && <p style={styles.error}>{restoreError}</p>}
+      {restoreError && <p className="error-text">{restoreError}</p>}
 
       {restorePreview && (
-        <div style={styles.restorePreview}>
+        <div className="restore-preview">
           <p>
             This backup was exported {new Date(restorePreview.data.exportedAt).toLocaleString()} and has{' '}
             {restorePreview.data.limitSnapshots.length} snapshot{restorePreview.data.limitSnapshots.length === 1 ? '' : 's'} and{' '}
@@ -110,11 +112,11 @@ export function BackupRestoreSection({ settings, onSettingsRestored }: { setting
             fingerprint{restorePreview.newFingerprints === 1 ? '' : 's'} will be added — anything already stored, or already more recent, is left
             alone. Settings will be restored too, except the daemon connection (kept as-is).
           </p>
-          <div style={styles.backupRow}>
-            <button type="button" onClick={() => void confirmRestore()}>
+          <div className="backup-row">
+            <button type="button" className="btn btn-primary" onClick={() => void confirmRestore()}>
               Restore
             </button>
-            <button type="button" onClick={() => setRestorePreview(null)}>
+            <button type="button" className="btn" onClick={() => setRestorePreview(null)}>
               Cancel
             </button>
           </div>
@@ -122,12 +124,12 @@ export function BackupRestoreSection({ settings, onSettingsRestored }: { setting
       )}
 
       {restoreDone && (
-        <p style={styles.ok}>
+        <p className="ok-text">
           Restored {restoreDone.snapshots} snapshot{restoreDone.snapshots === 1 ? '' : 's'} and {restoreDone.fingerprints} project fingerprint
           {restoreDone.fingerprints === 1 ? '' : 's'}.
         </p>
       )}
-    </div>
+    </section>
   );
 }
 

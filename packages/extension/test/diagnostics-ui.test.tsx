@@ -38,21 +38,28 @@ describe('Diagnostics', () => {
     render(<App />);
     await screen.findByText('Settings');
 
-    expect(screen.queryByText(/extension: 0\.2\.2/)).toBeNull();
+    expect(screen.queryByText('Extension')).toBeNull();
     expect(getManifest).not.toHaveBeenCalled();
   });
 
+  // Diagnostics renders as a key/value grid (<dt>/<dd> pairs), not single "label: value" text
+  // nodes — each assertion below checks the label and its value as the two separate elements
+  // they now are, rather than one combined string.
   it('shows the plain diagnostics fields once opened, on an empty/unconfigured install', async () => {
     render(<App />);
     await screen.findByText('Settings');
 
     fireEvent.click(screen.getByText('Diagnostics'));
 
-    expect(await screen.findByText(/extension: 0\.2\.2 \(Chrome\/Edge \(MV3\)\)/)).toBeTruthy();
-    expect(screen.getByText(/last capture: never/)).toBeTruthy();
-    expect(screen.getByText(/snapshots stored: 0/)).toBeTruthy();
-    expect(screen.getByText(/schema errors: none/)).toBeTruthy();
-    expect(screen.getByText(/daemon: not configured/)).toBeTruthy();
+    expect(await screen.findByText('Extension')).toBeTruthy();
+    expect(screen.getByText('0.2.2 (Chrome/Edge (MV3))')).toBeTruthy();
+    expect(screen.getByText('Last capture')).toBeTruthy();
+    expect(screen.getByText('never')).toBeTruthy();
+    expect(screen.getByText('Snapshots')).toBeTruthy();
+    expect(screen.getByText('Schema errors')).toBeTruthy();
+    expect(screen.getByText('none')).toBeTruthy();
+    expect(screen.getByText('Daemon')).toBeTruthy();
+    expect(screen.getByText('not configured')).toBeTruthy();
   });
 
   it('shows a schema-validation failure when one has been recorded', async () => {
@@ -65,7 +72,7 @@ describe('Diagnostics', () => {
     await screen.findByText('Settings');
     fireEvent.click(screen.getByText('Diagnostics'));
 
-    expect(await screen.findByText(/schema errors: last failure/)).toBeTruthy();
+    expect(await screen.findByText(/^last failure/)).toBeTruthy();
   });
 
   describe('security: copied/rendered diagnostics never leak sensitive data', () => {
@@ -96,7 +103,7 @@ describe('Diagnostics', () => {
       render(<App />);
       await screen.findByText('Settings');
       fireEvent.click(screen.getByText('Diagnostics'));
-      await screen.findByText(/daemon: connected/);
+      await screen.findByText(/^connected/);
 
       const rendered = document.body.textContent ?? '';
       expect(rendered).not.toContain(SECRET_TOKEN);
@@ -109,7 +116,7 @@ describe('Diagnostics', () => {
       render(<App />);
       await screen.findByText('Settings');
       fireEvent.click(screen.getByText('Diagnostics'));
-      await screen.findByText(/daemon: connected/);
+      await screen.findByText(/^connected/);
 
       fireEvent.click(screen.getByText('Copy diagnostics'));
 

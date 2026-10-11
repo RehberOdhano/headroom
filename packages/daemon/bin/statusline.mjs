@@ -107,6 +107,18 @@ function readStdin() {
 }
 
 async function main() {
+  // Installed before the async daemon fetch below so it's already active by the time the final
+  // write happens. The real failure mode: Claude Code's own prompt renderer (the thing reading
+  // our stdout) can go away before `fetchTodayUsage` resolves — without this, the eventual
+  // `process.stdout.write()` throws an uncaught EPIPE and prints a stack trace, which is exactly
+  // the "must never error" rule this script otherwise documents and follows everywhere else.
+  process.stdout.on('error', (err) => {
+    if (err && err.code === 'EPIPE') {
+      process.exit(0);
+    }
+    throw err;
+  });
+
   const raw = await readStdin();
   let input = {};
   try {

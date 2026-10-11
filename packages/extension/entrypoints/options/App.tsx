@@ -16,8 +16,8 @@ export default function App() {
 
   if (records === undefined) {
     return (
-      <main style={{ fontFamily: 'system-ui, sans-serif', padding: '1.5rem', maxWidth: 480 }}>
-        <p>Loading…</p>
+      <main className="options-page">
+        <p className="hint">Loading…</p>
       </main>
     );
   }
@@ -44,14 +44,17 @@ export default function App() {
   }
 
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '1.5rem', maxWidth: 480 }}>
-      <h1 style={{ fontSize: '1.1rem' }}>Claude Usage Companion</h1>
-
+    <main className="options-page">
+      {/* No in-page "Claude Usage Companion" header here: this page's manifest.options_ui has
+          open_in_tab: false, so Chrome always wraps it in its own dialog chrome that already
+          shows the extension's icon, name, and a close button — an in-page header duplicated it
+          directly underneath (visible, confusing repetition). The page's own <title> tag still
+          identifies it on the rare path where it's opened as a plain tab instead. */}
       <SettingsPanel />
 
-      <details style={{ marginTop: 24 }}>
-        <summary style={{ cursor: 'pointer', color: '#666' }}>Developer: raw captures</summary>
-        <p>
+      <details className="advanced">
+        <summary className="advanced-summary">Developer: raw captures</summary>
+        <p className="hint">
           {records.length} raw capture{records.length === 1 ? '' : 's'} stored locally
           {Object.keys(counts).length > 0
             ? ` (${Object.entries(counts)
@@ -60,10 +63,8 @@ export default function App() {
             : ''}
           . Updates live as you use claude.ai — no need to reopen this page.
         </p>
-        {lastCapturedAt && (
-          <p style={{ color: '#666', fontSize: '0.9rem' }}>Last capture: {lastCapturedAt}</p>
-        )}
-        <button type="button" onClick={exportFixtures} disabled={records.length === 0}>
+        {lastCapturedAt && <p className="hint">Last capture: {lastCapturedAt}</p>}
+        <button type="button" className="btn" onClick={exportFixtures} disabled={records.length === 0}>
           Export fixtures
         </button>
       </details>

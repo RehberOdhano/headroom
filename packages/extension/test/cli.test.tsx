@@ -242,6 +242,30 @@ describe('CliTab / SearchTab', () => {
       expect(await screen.findByText('No CLI usage recorded yet in the last 30 days.')).toBeTruthy();
     });
 
+    it('shows a section-level error for a failed daily/summary request, without hiding By-project/By-model/By-session data that loaded fine', async () => {
+      const session = daemonSession({ sessionId: 's1', projectPath: '/proj-a', totalTokens: 500 });
+      const dailyEntry = { date: '2026-08-01', totalTokens: 500, totalCost: 0, inputTokens: 300, outputTokens: 200, cacheCreationTokens: 0, cacheReadTokens: 0, modelBreakdowns: [], modelsUsed: [] };
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/aggregate?by=day')) return new Response('', { status: 500 });
+        if (requested.includes('/aggregate?by=project')) return jsonResponse({ projects: { '/proj-a': [dailyEntry] }, totals: zeroTotals });
+        if (requested.includes('/aggregate?by=model')) {
+          return jsonResponse({ models: [{ modelName: 'claude-sonnet-5', inputTokens: 1, outputTokens: 1, cost: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }] });
+        }
+        if (requested.includes('/sessions')) return jsonResponse({ sessions: [session], totals: zeroTotals });
+        return jsonResponse({});
+      });
+
+      render(<CliTab />);
+
+      expect(await screen.findByText(/Daemon returned 500/)).toBeTruthy();
+      // Partial success: the other three sections still render real data.
+      expect(screen.getByText('claude-sonnet-5')).toBeTruthy();
+      expect(screen.getAllByText('/proj-a').length).toBeGreaterThan(0);
+      // Must not also claim a confirmed-empty result — the daily fetch failing is unknown, not zero.
+      expect(screen.queryByText('No CLI usage recorded yet in the last 30 days.')).toBeNull();
+    });
+
     it('shows a section-level error for a failed By-project request, without hiding By-model/By-session data that loaded fine', async () => {
       const session = daemonSession({ sessionId: 's1', projectPath: '/proj-a', totalTokens: 500 });
       vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
@@ -411,6 +435,20 @@ describe('CliTab / SearchTab', () => {
       expect(await screen.findByText('Search CLI sessions')).toBeTruthy();
     });
 
+    it('shows an explicit error, not silence, when the retention check\'s sessions fetch fails', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        const requested = String(url);
+        if (requested.includes('/sessions')) return new Response('', { status: 500 });
+        return jsonResponse({});
+      });
+
+      render(<SearchTab />);
+
+      // Must not be indistinguishable from "no sessions nearing cleanup" (which renders nothing).
+      expect(await screen.findByText('Couldn’t check sessions nearing cleanup.')).toBeTruthy();
+      expect(screen.queryByText('Sessions nearing cleanup')).toBeNull();
+    });
+
     it('still shows real CLI usage in the Activity tab for a session that is also nearing retention cleanup', async () => {
       const oldEnough = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString();
       const session = daemonSession({ sessionId: 's1', projectPath: '/proj-a', lastActivity: oldEnough, totalTokens: 1000 });
@@ -500,11 +538,16 @@ describe('CliTab / SearchTab', () => {
 
       fireEvent.click(screen.getByText('Show'));
 
-      expect(await screen.findByText(/Explore — Explore aggregate pipeline: 85/)).toBeTruthy();
+      // Type, description, tokens, and model each render as their own column/element (for
+      // independent styling and alignment), not one concatenated string.
+      expect(await screen.findByText('Explore')).toBeTruthy();
+      expect(screen.getByText('Explore aggregate pipeline')).toBeTruthy();
+      expect(screen.getByText('85')).toBeTruthy();
+      expect(screen.getByText('claude-sonnet-5')).toBeTruthy();
       expect(screen.getByText(/tracked separately from the session total above/)).toBeTruthy();
 
       fireEvent.click(screen.getByText('Hide'));
-      expect(screen.queryByText(/Explore — Explore aggregate pipeline/)).toBeNull();
+      expect(screen.queryByText('Explore aggregate pipeline')).toBeNull();
     });
 
     it('tells a daemon that lacks the subagent route apart from a session with genuinely no subagents', async () => {

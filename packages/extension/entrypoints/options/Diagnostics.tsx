@@ -4,7 +4,6 @@ import { db } from '../../lib/db.js';
 import { getDaemonConfigProjects, getDaemonSessions } from '../../lib/daemon-client.js';
 import { buildDiagnosticsReport, formatDiagnosticsText, type DiagnosticsInput } from '../../lib/diagnostics.js';
 import type { DaemonHealth, Settings } from '../../lib/protocol.js';
-import { styles } from './styles.ts';
 
 interface ParsedUsageError {
   capturedAt?: unknown;
@@ -92,31 +91,65 @@ export function Diagnostics({ settings, daemonHealth }: { settings: Settings; da
     }
   }
 
+  // Presentational only — green marks an already-healthy value the report computed (no schema
+  // errors, daemon connected); it never changes which fields are shown or their text.
+  const schemaHealthy = report?.schemaFailure === 'none';
+  const daemonHealthy = report?.daemon.startsWith('connected') ?? false;
+  const daemonUnreachable = report?.daemon === 'configured but unreachable';
+
   return (
-    <details style={styles.advanced} onToggle={onToggle}>
-      <summary style={styles.advancedSummary}>Diagnostics</summary>
-      {report && (
-        <>
-          <ul style={styles.checklist}>
-            <li style={styles.checklistItem}>extension: {report.extensionVersion} ({report.browserFamily})</li>
-            <li style={styles.checklistItem}>last capture: {report.lastCapture}</li>
-            <li style={styles.checklistItem}>snapshots stored: {report.snapshotCount}</li>
-            <li style={styles.checklistItem}>schema errors: {report.schemaFailure}</li>
-            <li style={styles.checklistItem}>daemon: {report.daemon}</li>
-            {report.daemonUrl && <li style={styles.checklistItem}>daemon url: {report.daemonUrl}</li>}
-            {report.daemonLastChecked && <li style={styles.checklistItem}>daemon last checked: {report.daemonLastChecked}</li>}
-            <li style={styles.checklistItem}>projects: {report.projectCount}</li>
-            <li style={styles.checklistItem}>sessions: {report.sessionCount}</li>
-          </ul>
-          <button type="button" onClick={() => void copy()}>
-            {copied ? 'Copied!' : 'Copy diagnostics'}
-          </button>
-          <p style={styles.hint}>
-            Never includes your bearer token, account id, prompts, responses, or file paths — only the
-            fields shown above.
-          </p>
-        </>
-      )}
-    </details>
+    <section className="card">
+      <details onToggle={onToggle}>
+        <summary className="card-summary">
+          Diagnostics
+          <svg className="card-summary-chevron" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M3.5 1.5l4 3.5-4 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </summary>
+        {report && (
+          <div className="card-summary-body">
+            <dl className="kv-grid">
+              <dt className="kv-key">Extension</dt>
+              <dd className="kv-value">
+                {report.extensionVersion} ({report.browserFamily})
+              </dd>
+              <dt className="kv-key">Last capture</dt>
+              <dd className="kv-value">{report.lastCapture}</dd>
+              <dt className="kv-key">Snapshots</dt>
+              <dd className="kv-value">{report.snapshotCount}</dd>
+              <dt className="kv-key">Schema errors</dt>
+              <dd className={`kv-value ${schemaHealthy ? 'status-text-success' : ''}`}>{report.schemaFailure}</dd>
+              <dt className="kv-key">Daemon</dt>
+              <dd className={`kv-value ${daemonHealthy ? 'status-text-success' : daemonUnreachable ? 'status-text-error' : ''}`}>
+                {report.daemon}
+              </dd>
+              {report.daemonUrl && (
+                <>
+                  <dt className="kv-key">Daemon URL</dt>
+                  <dd className="kv-value">{report.daemonUrl}</dd>
+                </>
+              )}
+              {report.daemonLastChecked && (
+                <>
+                  <dt className="kv-key">Daemon last checked</dt>
+                  <dd className="kv-value">{report.daemonLastChecked}</dd>
+                </>
+              )}
+              <dt className="kv-key">Projects</dt>
+              <dd className="kv-value">{report.projectCount}</dd>
+              <dt className="kv-key">Sessions</dt>
+              <dd className="kv-value">{report.sessionCount}</dd>
+            </dl>
+            <button type="button" className="btn" onClick={() => void copy()}>
+              {copied ? 'Copied!' : 'Copy diagnostics'}
+            </button>
+            <p className="hint" style={{ marginTop: 'var(--space-3)', marginBottom: 0 }}>
+              Never includes your bearer token, account id, prompts, responses, or file paths — only the
+              fields shown above.
+            </p>
+          </div>
+        )}
+      </details>
+    </section>
   );
 }
