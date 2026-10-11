@@ -6,6 +6,16 @@ import { loadWhatChanged } from '../../../lib/what-changed.js';
 import { PROVENANCE_LABEL } from '../../../lib/provenance.js';
 import type { Settings } from '../../../lib/protocol.js';
 
+// Display-only label derived from the finding's own `kind` discriminant — no new categories,
+// just a short heading for a grouping the data already carries.
+const FINDING_LABELS: Record<WhatChangedFinding['kind'], string> = {
+  'account-usage': 'Account',
+  'cli-volume': 'CLI volume',
+  'project-share': 'Project',
+  'model-share': 'Model',
+  'largest-session': 'Session',
+};
+
 /**
  * Comparative facts about this weekly window vs. the same elapsed portion of the previous one —
  * entirely derived, never shown at all when nothing clears its own significance threshold (see
@@ -38,9 +48,14 @@ export function WhatChanged({ settings }: { settings: Settings }) {
         <h2 className="card-title">What changed</h2>
       </div>
       {findings.map((finding) => (
-        <p key={finding.kind} className="hint" title={finding.kind === 'account-usage' ? PROVENANCE_LABEL.server : PROVENANCE_LABEL.derived}>
-          {finding.text}
-        </p>
+        <div
+          key={finding.kind}
+          className="change-row"
+          title={finding.kind === 'account-usage' ? PROVENANCE_LABEL.server : PROVENANCE_LABEL.derived}
+        >
+          <span className="change-label">{FINDING_LABELS[finding.kind]}</span>
+          <p className="change-text">{finding.text}</p>
+        </div>
       ))}
     </section>
   );

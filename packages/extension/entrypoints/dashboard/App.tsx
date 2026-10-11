@@ -16,6 +16,7 @@ import { formatUpdatedAgo, PROVENANCE_LABEL } from '../../lib/provenance.js';
 import { DEFAULT_SETTINGS, getSettings } from '../../lib/settings.js';
 import { formatUsageInspectorFindings, loadUsageInspector } from '../../lib/usage-inspector.js';
 import type { Settings } from '../../lib/protocol.js';
+import { AnomalyNotice } from '../components/AnomalyNotice.tsx';
 import { CliTab, SearchTab } from './Cli.tsx';
 import { ReleaseNotesBanner } from './UsageExtras.tsx';
 
@@ -174,15 +175,21 @@ function UsageInspectorPanel({ windowStart, settings }: { windowStart: string; s
   return (
     <div title={PROVENANCE_LABEL.derived}>
       {lines === 'loading' ? (
-        <p className="hint">Looking at local activity since {new Date(windowStart).toLocaleString()}…</p>
+        <p className="inspector-state inspector-state-loading">
+          Looking at local activity since {new Date(windowStart).toLocaleString()}…
+        </p>
       ) : lines === 'unavailable' ? (
-        <p className="hint">Couldn&rsquo;t reach the daemon to look up local activity for this period.</p>
+        <p className="inspector-state inspector-state-unavailable">
+          Couldn&rsquo;t reach the daemon to look up local activity for this period.
+        </p>
+      ) : lines.length === 1 && lines[0]!.startsWith('Headroom did not observe') ? (
+        <p className="inspector-state inspector-state-empty">{lines[0]}</p>
       ) : (
-        lines.map((line) => (
-          <p key={line} className="hint">
-            {line}
-          </p>
-        ))
+        <div className="inspector-findings">
+          {lines.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -206,7 +213,8 @@ function BarSection({
   const latestBar = latestSnapshot?.[barKey] ?? null;
   const burnRate = forecastBurnRate(series);
   const forecast = latestBar ? describeForecast(burnRate, latestBar.resetsAt, latestBar.percent) : null;
-  const safePaceText = latestBar ? describeSafePace(computeSafePace(latestBar.percent, latestBar.resetsAt, burnRate)) : null;
+  const safePace = latestBar ? computeSafePace(latestBar.percent, latestBar.resetsAt, burnRate) : null;
+  const safePaceText = describeSafePace(safePace);
   const anomaly = latestBar ? detectBurnRateAnomaly(series, new Date(), latestBar.resetsAt) : null;
   const low = series.length > 0 ? Math.min(...series.map((p) => p.percent)) : null;
   const high = series.length > 0 ? Math.max(...series.map((p) => p.percent)) : null;
@@ -260,22 +268,24 @@ function BarSection({
         </p>
       )}
 
-      {safePaceText && (
-        <p className="hint" title={PROVENANCE_LABEL.derived}>
-          {safePaceText}
-        </p>
+      {safePace && (
+        <div className="metric-row" title={PROVENANCE_LABEL.derived}>
+          <p className="metric-label">Sustainable pace</p>
+          <p className="metric-value">{formatPercent(safePace.safeHourlyRate)}%/hour</p>
+          {safePaceText && <p className="metric-caption">{safePaceText}</p>}
+        </div>
       )}
 
       {anomaly?.isAnomalous && (
-        <>
-          <p className="forecast-line at-risk" title={PROVENANCE_LABEL.derived}>
-            ⚠ Usage is rising faster than its recent pattern.
-            {anomaly.baselineMaturity === 'preliminary' ? ' (early pattern — based on limited history)' : ''}
-          </p>
+        <AnomalyNotice
+          headline="Usage is rising faster than its recent pattern."
+          note={anomaly.baselineMaturity === 'preliminary' ? 'Early pattern — based on limited history.' : undefined}
+          title={PROVENANCE_LABEL.derived}
+        >
           {settings?.daemonUrl && settings?.daemonToken && (
             <UsageInspectorPanel windowStart={anomaly.runStartedAt} settings={settings} />
           )}
-        </>
+        </AnomalyNotice>
       )}
     </section>
   );

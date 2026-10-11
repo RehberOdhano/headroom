@@ -14,7 +14,12 @@ export function RetentionWarnings({ settings }: { settings: Settings }) {
     void getDaemonSessions(settings).then(setSessions);
   }, [settings.daemonUrl, settings.daemonToken]);
 
-  if (!sessions?.ok) return null;
+  if (sessions === null) return null;
+
+  // A failed/unreachable sessions request must not collapse to the same `null` a genuinely
+  // zero-warnings result renders as — that would silently misreport "nothing nearing cleanup"
+  // when the truth is "couldn't check."
+  if (!sessions.ok) return <p className="error-text">Couldn&rsquo;t check sessions nearing cleanup.</p>;
 
   const warnings = findRetentionWarnings(sessions.data.sessions);
 
@@ -36,27 +41,33 @@ export function RetentionWarnings({ settings }: { settings: Settings }) {
         />
         Include tool calls in export (as short summaries)
       </label>
-      {warnings.map(({ session, daysLeft }) => (
-        <div key={session.sessionId} className="warning-card">
-          <div className="warning-info">
-            <p className="warning-title">{session.projectPath}</p>
-            <p className="warning-meta">
-              {formatLastActivity(session.lastActivity)} · {Math.max(0, Math.round(daysLeft))} day
-              {Math.round(daysLeft) === 1 ? '' : 's'} left · {formatTokens(session.totalTokens)} tokens
-            </p>
+      {warnings.map(({ session, daysLeft }) => {
+        const roundedDays = Math.max(0, Math.round(daysLeft));
+        return (
+          <div key={session.sessionId} className="warning-card">
+            <div className="warning-info">
+              <p className="warning-title">{session.projectPath}</p>
+              <p className="warning-meta">
+                <span>Last active {formatLastActivity(session.lastActivity)}</span>
+                <span className={roundedDays <= 1 ? 'warning-days warning-days-urgent' : 'warning-days'}>
+                  {roundedDays} day{roundedDays === 1 ? '' : 's'} left
+                </span>
+                <span>{formatTokens(session.totalTokens)} tokens</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn"
+              onClick={async () => {
+                const exported = await exportDaemonSession(settings, session.sessionId, { includeToolCalls });
+                if (exported.ok) downloadMarkdown(`${session.sessionId}.md`, exported.data);
+              }}
+            >
+              Export markdown
+            </button>
           </div>
-          <button
-            type="button"
-            className="btn"
-            onClick={async () => {
-              const exported = await exportDaemonSession(settings, session.sessionId, { includeToolCalls });
-              if (exported.ok) downloadMarkdown(`${session.sessionId}.md`, exported.data);
-            }}
-          >
-            Export markdown
-          </button>
-        </div>
-      ))}
+        );
+      })}
     </section>
   );
 }

@@ -8,57 +8,7 @@ import { barHistory } from '../../lib/history.js';
 import { summarizeHeadroom, type Headline } from '../../lib/headline.js';
 import { describeUsageAnomaly } from '../../lib/anomaly.js';
 import { PROVENANCE_LABEL } from '../../lib/provenance.js';
-
-const styles = {
-  main: { fontFamily: 'system-ui, sans-serif', padding: '1rem', width: 260 },
-  headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' },
-  heading: { fontSize: '1rem', margin: '0 0 0.75rem' },
-  refreshButton: {
-    fontSize: '0.75rem',
-    background: 'none',
-    border: 'none',
-    color: '#3b82f6',
-    cursor: 'pointer',
-    padding: 0,
-  } as const,
-  label: { display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' },
-  track: {
-    background: '#e5e7eb',
-    borderRadius: 4,
-    height: 8,
-    marginTop: 4,
-    marginBottom: 12,
-    overflow: 'hidden',
-  } as const,
-  empty: { fontSize: '0.85rem', color: '#4b5563', lineHeight: 1.4 },
-  updated: { fontSize: '0.75rem', color: '#6b7280', marginTop: 4 },
-  historyLink: { fontSize: '0.75rem', marginTop: 4, display: 'inline-block' },
-  headline: { fontSize: '0.85rem', fontWeight: 600, lineHeight: 1.35, margin: '0 0 0.75rem', padding: '0.5rem 0.6rem', borderRadius: 6 } as const,
-  extraCredits: { marginTop: 4, marginBottom: 12 },
-  extraCreditsAmount: { fontSize: '0.75rem', color: '#6b7280', margin: '2px 0 0' },
-  emptyButton: {
-    display: 'inline-block',
-    marginTop: 10,
-    padding: '0.4rem 0.75rem',
-    background: '#3b82f6',
-    color: '#fff',
-    borderRadius: 6,
-    fontSize: '0.8rem',
-    fontWeight: 600,
-    textDecoration: 'none',
-  } as const,
-  ratingPrompt: { fontSize: '0.75rem', color: '#4b5563', margin: '0 0 0.75rem' },
-  anomalyNote: {
-    fontSize: '0.75rem',
-    fontWeight: 500,
-    color: '#92400e',
-    background: '#fffbeb',
-    margin: '0 0 0.75rem',
-    padding: '0.5rem 0.6rem',
-    borderRadius: 6,
-    lineHeight: 1.35,
-  } as const,
-} as const;
+import { AnomalyNotice } from '../components/AnomalyNotice.tsx';
 
 const USAGE_SETTINGS_URL = 'https://claude.ai/settings/usage';
 const STORE_URL = 'https://chromewebstore.google.com/detail/chjbjdabpficejgogljohhlobfaehepl';
@@ -66,13 +16,13 @@ const RATING_PROMPT_KEY = 'ratingPromptShown';
 
 function ExtraCreditsRow({ info }: { info: ExtraCreditsInfo }) {
   return (
-    <div style={styles.extraCredits}>
-      <div style={styles.label}>
-        <span>Extra credits</span>
-        <span>{info.percent !== null ? `${Math.round(info.percent)}%` : '—'}</span>
+    <div className="popup-extra-credits">
+      <div className="popup-bar-label-row">
+        <span className="popup-bar-title">Extra credits</span>
+        <span className="popup-bar-value">{info.percent !== null ? `${Math.round(info.percent)}%` : '—'}</span>
       </div>
       {info.usedAmount !== null && info.limitAmount !== null && (
-        <p style={styles.extraCreditsAmount}>
+        <p className="popup-extra-credits-amount">
           {info.currency ?? ''} {info.usedAmount.toFixed(2)} / {info.limitAmount.toFixed(2)}
         </p>
       )}
@@ -81,16 +31,18 @@ function ExtraCreditsRow({ info }: { info: ExtraCreditsInfo }) {
 }
 
 // Never color-only: each tone also carries a leading symbol so it reads without color vision.
-const HEADLINE_STYLES: Record<Headline['tone'], { symbol: string; background: string; color: string }> = {
-  ok: { symbol: '✓ ', background: '#ecfdf5', color: '#065f46' },
-  warn: { symbol: '⚠ ', background: '#fffbeb', color: '#92400e' },
-  alert: { symbol: '⛔ ', background: '#fef2f2', color: '#991b1b' },
+// "ok" uses the operational-health green class (a forecast that's on track is a status readout,
+// not an ordinary usage level) — doesn't affect the usage bars below, which stay blue/amber/red.
+const HEADLINE_STYLES: Record<Headline['tone'], { symbol: string; className: string }> = {
+  ok: { symbol: '✓ ', className: 'popup-banner-ok' },
+  warn: { symbol: '⚠ ', className: 'popup-banner-warn' },
+  alert: { symbol: '⛔ ', className: 'popup-banner-alert' },
 };
 
 function HeadlineBanner({ headline }: { headline: Headline }) {
   const tone = HEADLINE_STYLES[headline.tone];
   return (
-    <p role="status" style={{ ...styles.headline, background: tone.background, color: tone.color }}>
+    <p role="status" className={`popup-banner ${tone.className}`}>
       {tone.symbol}
       {headline.text}
     </p>
@@ -99,15 +51,15 @@ function HeadlineBanner({ headline }: { headline: Headline }) {
 
 function Bar({ title, bar }: { title: string; bar: LimitBar }) {
   return (
-    <div>
-      <div style={styles.label}>
-        <span>{title}</span>
-        <span>
+    <div className="popup-bar">
+      <div className="popup-bar-label-row">
+        <span className="popup-bar-title">{title}</span>
+        <span className="popup-bar-value">
           {formatPercent(bar.percent)}% · resets {formatResetLabel(bar.resetsAt)}
         </span>
       </div>
       <div
-        style={styles.track}
+        className="popup-bar-track"
         role="progressbar"
         aria-label={title}
         aria-valuemin={0}
@@ -115,9 +67,9 @@ function Bar({ title, bar }: { title: string; bar: LimitBar }) {
         aria-valuenow={Math.round(bar.percent)}
       >
         <div
+          className="popup-bar-fill"
           style={{
             width: `${Math.min(100, Math.max(0, bar.percent))}%`,
-            height: '100%',
             background: barColor(bar.severity),
           }}
         />
@@ -194,10 +146,13 @@ export default function App() {
   }
 
   return (
-    <main style={styles.main}>
-      <div style={styles.headerRow}>
-        <h1 style={styles.heading}>Claude usage</h1>
-        <button type="button" style={styles.refreshButton} onClick={refresh} disabled={refreshing}>
+    <main className="popup">
+      <div className="popup-header">
+        <div className="popup-header-left">
+          <img className="popup-icon" src={browser.runtime.getURL('/icon/48.png')} alt="" />
+          <h1 className="popup-title">Claude usage</h1>
+        </div>
+        <button type="button" className="popup-refresh" onClick={refresh} disabled={refreshing}>
           {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
@@ -205,13 +160,9 @@ export default function App() {
         <>
           {/* Only when something needs attention — "all clear" just repeats what the bars show. */}
           {headline && headline.tone !== 'ok' && <HeadlineBanner headline={headline} />}
-          {anomalyNote && (
-            <p role="status" style={styles.anomalyNote} title={PROVENANCE_LABEL.derived}>
-              ⚠ {anomalyNote}
-            </p>
-          )}
+          {anomalyNote && <AnomalyNotice headline={anomalyNote} title={PROVENANCE_LABEL.derived} />}
           {showRating && (
-            <p style={styles.ratingPrompt}>
+            <p className="popup-rating">
               Glad this caught it early —{' '}
               <a href={STORE_URL} target="_blank" rel="noreferrer">
                 rate headroom on the Chrome Web Store
@@ -222,61 +173,56 @@ export default function App() {
           {latest.session && <Bar title="Session (5h)" bar={latest.session} />}
           {latest.weekly && <Bar title="Weekly" bar={latest.weekly} />}
           {!latest.session && !latest.weekly && (
-            <p style={styles.empty}>Captured data, but no session/weekly bars in it yet.</p>
+            <p className="popup-state">Captured data, but no session/weekly bars in it yet.</p>
           )}
           {latest.extraCredits && <ExtraCreditsRow info={latest.extraCredits} />}
-          <p style={styles.updated}>
+          <p className="popup-updated">
             Last updated: {new Date(latest.capturedAt).toLocaleString()} via {describeSource(latest.source)}
           </p>
-          <a
-            style={styles.historyLink}
-            href={browser.runtime.getURL('/dashboard.html')}
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a className="popup-cta" href={browser.runtime.getURL('/dashboard.html')} target="_blank" rel="noreferrer">
             View history & forecast →
           </a>
         </>
       ) : visitedClaudeAi && usageParseError ? (
         <div>
-          <p style={styles.empty}>
+          <p className="popup-state popup-state-error">
             Account detected, but the usage data couldn't be read — claude.ai may have changed its
             format. This has been logged; try again after the next extension update, or see the
             setup checklist.
           </p>
-          <p style={styles.updated}>
-            <a href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
+          <p className="popup-updated">
+            <a className="popup-secondary-link" href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
               Setup checklist
             </a>
           </p>
         </div>
       ) : visitedClaudeAi ? (
         <div>
-          <p style={styles.empty}>
+          <p className="popup-state">
             Account detected — the first usage snapshot hasn't landed yet. This is usually quick;
             try Refresh above in a moment.
           </p>
-          <p style={styles.updated}>
-            <a href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
+          <p className="popup-updated">
+            <a className="popup-secondary-link" href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
               Setup checklist
             </a>
           </p>
         </div>
       ) : (
         <div>
-          <p style={styles.empty}>
+          <p className="popup-state">
             No usage data yet. Open claude.ai → Settings → Usage once to start tracking — the extension
             can't find your account until then.
           </p>
-          <a style={styles.emptyButton} href={USAGE_SETTINGS_URL} target="_blank" rel="noreferrer">
+          <a className="popup-state-cta" href={USAGE_SETTINGS_URL} target="_blank" rel="noreferrer">
             Open Settings → Usage
           </a>
-          <p style={styles.updated}>
+          <p className="popup-updated">
             On the free plan? claude.ai may send you to a pricing page instead — tracking needs an
             active plan with usage limits.
           </p>
-          <p style={styles.updated}>
-            <a href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
+          <p className="popup-updated">
+            <a className="popup-secondary-link" href={browser.runtime.getURL('/options.html')} target="_blank" rel="noreferrer">
               Setup checklist
             </a>
           </p>

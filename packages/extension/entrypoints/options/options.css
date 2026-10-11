@@ -1,0 +1,369 @@
+@import '../../lib/styles/tokens.css';
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.options-page {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5) 64px;
+}
+
+/* Cards — same visual language as the dashboard's .card (separate stylesheet, so restated here). */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin-bottom: var(--space-4);
+}
+
+.card-header {
+  margin-bottom: var(--space-3);
+}
+
+.card-title {
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin: 0;
+}
+
+/* A card whose only content is a collapsible <details> (Diagnostics) — the summary itself reads
+   as the card title, with a small disclosure chevron instead of the browser's default marker. */
+.card-summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.card-summary::-webkit-details-marker {
+  display: none;
+}
+
+.card-summary::marker {
+  content: '';
+}
+
+/* A real SVG chevron (rendered as a child element in Diagnostics.tsx), not a CSS ::after
+   Unicode glyph — a glyph like "▸" rendered at a legible size reads as barely-there low-contrast
+   noise against the dark surface; an SVG keeps a crisp, properly-sized, consistent stroke. */
+.card-summary-chevron {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  transition: transform var(--transition-fast);
+}
+
+details[open] > .card-summary .card-summary-chevron {
+  transform: rotate(90deg);
+}
+
+.card-summary-body {
+  margin-top: var(--space-4);
+}
+
+/* Buttons */
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--color-bg-subtle);
+  border-color: var(--color-text-faint);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-primary {
+  background: var(--color-accent-strong);
+  border-color: var(--color-accent-strong);
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--color-accent-strong);
+  outline-offset: 2px;
+}
+
+/* Form fields */
+.field {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: var(--space-3);
+}
+
+.field:last-child {
+  margin-bottom: 0;
+}
+
+.field-input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  height: 34px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 0.85rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-bg);
+}
+
+.threshold-row {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.threshold-field {
+  flex: 1;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: 0.85rem;
+  color: var(--color-text);
+  margin-bottom: var(--space-3);
+  cursor: pointer;
+}
+
+.checkbox-row:last-child {
+  margin-bottom: 0;
+}
+
+.checkbox-row input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+/* Text helpers */
+.hint {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  margin: 0 0 var(--space-3);
+}
+
+.hint:last-child {
+  margin-bottom: 0;
+}
+
+.hint code {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  background: var(--color-bg-subtle);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.error-text {
+  font-size: 0.85rem;
+  color: var(--color-danger);
+}
+
+.ok-text {
+  font-size: 0.85rem;
+  color: var(--color-success);
+}
+
+/* Status row (daemon pairing/connection) — green is reserved for this kind of operational-health
+   readout, never for ordinary usage severity (that stays blue/amber/red elsewhere). */
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.85rem;
+  margin-bottom: var(--space-2);
+}
+
+.status-row:last-child {
+  margin-bottom: 0;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot-success {
+  background: var(--color-success);
+}
+
+.status-dot-error {
+  background: var(--color-danger);
+}
+
+.status-dot-muted {
+  background: var(--color-text-faint);
+}
+
+.status-text-success {
+  color: var(--color-success);
+}
+
+.status-text-error {
+  color: var(--color-danger);
+}
+
+.install-command {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin: var(--space-3) 0;
+}
+
+.install-command code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+}
+
+/* Advanced / collapsible sections */
+.advanced {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.advanced-summary {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.advanced[open] .advanced-summary {
+  margin-bottom: var(--space-3);
+}
+
+/* Setup checklist */
+.checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.checklist-item {
+  font-size: 0.85rem;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.checklist-done {
+  color: var(--color-success);
+}
+
+.checklist-pending {
+  color: var(--color-text-faint);
+}
+
+/* Diagnostics key/value grid */
+.kv-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--space-4);
+  row-gap: 6px;
+  font-size: 0.85rem;
+  margin: 0 0 var(--space-3);
+}
+
+.kv-grid dt,
+.kv-grid dd {
+  margin: 0;
+}
+
+.kv-key {
+  color: var(--color-text-muted);
+}
+
+.kv-value {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* Backup/restore */
+.backup-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.restore-preview {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.restore-preview p {
+  margin: 0 0 var(--space-2);
+}
+
+.restore-preview p:last-of-type {
+  margin-bottom: var(--space-3);
+}

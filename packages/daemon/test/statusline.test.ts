@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { mkdtempSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -169,6 +170,38 @@ describe('isMainModule', () => {
   it('returns false for an unrelated entry path', () => {
     process.argv[1] = path.join(tmpdir(), 'some-other-script.mjs');
     expect(isMainModule()).toBe(false);
+  });
+});
+
+describe('main() — stdout EPIPE handling', () => {
+  // Real regression case: the statusline's output consumer (Claude Code's own prompt renderer)
+  // can close the pipe before the async daemon fetch inside main() resolves and the eventual
+  // `process.stdout.write()` fires. Spawns the actual entrypoint (not just a unit-tested helper)
+  // and destroys its stdout immediately — before the child process has even started running its
+  // own JS — which reliably reproduces a write against an already-closed pipe.
+  it('exits cleanly with no stack trace or EPIPE noise when stdout closes before the write', async () => {
+    // Isolated $HOME so this never depends on (or reads) this machine's real paired-daemon token.
+    const isolatedHome = mkdtempSync(path.join(tmpdir(), 'statusline-epipe-'));
+    try {
+      const child = spawn(process.execPath, [STATUSLINE_PATH], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, HOME: isolatedHome },
+      });
+      child.stdout.destroy();
+      child.stdin.end('{}');
+
+      let stderr = '';
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk;
+      });
+
+      const exitCode = await new Promise<number | null>((resolve) => child.on('close', resolve));
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toBe('');
+    } finally {
+      rmSync(isolatedHome, { recursive: true, force: true });
+    }
   });
 });
 
