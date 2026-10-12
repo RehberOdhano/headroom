@@ -139,6 +139,25 @@ export function CliOverview({ settings }: { settings: Settings }) {
   const byModelFailed = byModel && !byModel.ok;
   const sessionsFailed = sessions && !sessions.ok;
 
+  // All four requests share the same daemon and token, so a single root cause (most commonly a
+  // rejected token) fails every section with the identical message — rendering that once per
+  // section just repeats the same line three or four times. Keep only each distinct message's
+  // first (topmost) occurrence.
+  const dailyErrorMessage = dailyFailed ? daily.message : null;
+  const byProjectErrorMessage = byProjectFailed ? byProject.message : null;
+  const byModelErrorMessage = byModelFailed ? byModel.message : null;
+  const sessionsErrorMessage = sessionsFailed ? sessions.message : null;
+  const seenErrorMessages = new Set<string>();
+  function firstOccurrence(message: string | null): boolean {
+    if (message === null || seenErrorMessages.has(message)) return false;
+    seenErrorMessages.add(message);
+    return true;
+  }
+  const showDailyError = firstOccurrence(dailyErrorMessage);
+  const showByProjectError = firstOccurrence(byProjectErrorMessage);
+  const showByModelError = firstOccurrence(byModelErrorMessage);
+  const showSessionsError = firstOccurrence(sessionsErrorMessage);
+
   // Filtered down for both display and CSV export — a long table (many projects, or a heavy CLI
   // user's many sessions) is otherwise nothing but scrolling to find one entry. Models aren't
   // filtered: an account realistically only ever has a handful in play, never enough to need it.
@@ -147,7 +166,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
 
   return (
     <>
-      {dailyFailed && <p className="error-text">{daily.message}</p>}
+      {showDailyError && <p className="error-text">{dailyErrorMessage}</p>}
       {daily?.ok && (
         <div className="stat-grid">
           <div className="stat-card" title={PROVENANCE_LABEL.local}>
@@ -185,7 +204,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
         </>
       )}
 
-      {byProjectFailed && <p className="error-text">{byProject.message}</p>}
+      {showByProjectError && <p className="error-text">{byProjectErrorMessage}</p>}
       {projectRows.length > 0 && (
         <>
           <div className="card-header">
@@ -243,7 +262,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
         </>
       )}
 
-      {byModelFailed && <p className="error-text">{byModel.message}</p>}
+      {showByModelError && <p className="error-text">{byModelErrorMessage}</p>}
       {modelRows.length > 0 && (
         <>
           <div className="card-header">
@@ -292,7 +311,7 @@ export function CliOverview({ settings }: { settings: Settings }) {
         </>
       )}
 
-      {sessionsFailed && <p className="error-text">{sessions.message}</p>}
+      {showSessionsError && <p className="error-text">{sessionsErrorMessage}</p>}
       {sessionRows.length > 0 && (
         <>
           <div className="card-header">

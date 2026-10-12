@@ -1,6 +1,9 @@
 /** What's-new copy shown once after an update. Add an entry per release worth announcing;
  *  versions without one show nothing. */
 export const RELEASE_NOTES: Record<string, string[]> = {
+  '0.3.2': [
+    'Fixed: a rejected daemon token (or any other failure affecting every Activity section at once) could show the same error message repeated once per section — it now shows just once.',
+  ],
   '0.3.1': [
     'Refreshed the popup and Settings pages to match the dashboard’s look, including dark mode.',
     'Redesigned the subagent list in Activity → By session as an expandable card, with a scroll limit for sessions with many subagents.',
