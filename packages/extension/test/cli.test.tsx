@@ -329,6 +329,15 @@ describe('CliTab / SearchTab', () => {
       expect(screen.queryByText('No CLI usage recorded yet in the last 30 days.')).toBeNull();
     });
 
+    it('shows a rejected-token error only once, even though it fails every section identically', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 401 }));
+
+      render(<CliTab />);
+
+      expect(await screen.findAllByText('Daemon rejected the token — check it in settings.')).toHaveLength(1);
+      expect(screen.queryByText('No CLI usage recorded yet in the last 30 days.')).toBeNull();
+    });
+
     it('shows a week-over-week delta computed from the same 30-day daily fetch, no new call', async () => {
       // Dates relative to the real wall clock at test-run time, not a hardcoded date — avoids
       // depending on (or needing to fake) the system clock, since weekOverWeek() buckets off
