@@ -193,8 +193,9 @@ existing statusline script's stdin through it and append its output as an additi
 - Nothing leaves your machine — no accounts, no cloud sync, no analytics, no crash reporting.
 - The extension only talks to `https://claude.ai` and `http://127.0.0.1` (the daemon).
 - The daemon binds to `127.0.0.1` only, requires a bearer token on every route except
-  `/health`, and rejects any `http(s):` page origin outright — only extension-scheme origins
-  are accepted.
+  `/health` and the one-time `/pair`, and rejects any `http(s):` page origin outright. Requests
+  with no `Origin` header at all (curl, the statusline script) are allowed, but still need the
+  token.
 - No conversation content is ever logged. Logs contain only ids, counts, and timestamps.
 - Full privacy policy: [`docs/privacy.html`](docs/privacy.html), published at
   https://rehberodhano.github.io/headroom/privacy.html.

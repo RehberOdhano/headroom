@@ -71,10 +71,11 @@ statusline script's stdin through it and append its output as an additional segm
 ## Privacy & security
 
 - Nothing leaves your machine — no accounts, no cloud sync, no analytics.
-- Binds to `127.0.0.1` only, requires a bearer token on every route except `/health`, and rejects
-  any `http(s):` page origin outright — only extension-scheme origins are accepted.
-- No conversation content is ever logged or read beyond structural fields (tool names, counts,
-  timestamps).
+- Binds to `127.0.0.1` only, requires a bearer token on every route except `/health` and the
+  one-time `/pair`, and rejects any `http(s):` page origin outright. Requests with no `Origin`
+  header at all (curl, the statusline script) are allowed, but still need the token.
+- No conversation content is ever logged or sent anywhere. Session search and markdown export do
+  read session content, but only locally and on demand, when you ask for them.
 
 Full privacy policy: https://rehberodhano.github.io/headroom/privacy.html
 

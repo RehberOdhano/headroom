@@ -1,7 +1,7 @@
 # claude.ai endpoint discovery
 
-Resolves the first open question in `CLAUDE.md` section 13: exact request/response shapes
-for `/usage` and `message_limit`. Captured by driving a real, logged-in claude.ai session
+Resolved the original open question of what the exact request/response shapes for `/usage`
+and `message_limit` are. Captured by driving a real, logged-in claude.ai session
 (Pro plan) with the `claude-in-chrome` tool and reading actual network responses — not
 inferred from documentation, because there isn't any.
 
@@ -53,7 +53,7 @@ the session cookie.
    `{kind, group, percent, severity, resets_at, scope, is_active}`. Both captures have exactly
    `kind: "session"` and `kind: "weekly_all"` entries; `is_active` flips between them based on
    which one is currently binding (session was active in A, weekly in B). Still the more
-   forward-compatible source for the limit-bars feature (`CLAUDE.md` section 8.1) than hand-picking
+   forward-compatible source for the limit-bars feature than hand-picking
    `five_hour`/`seven_day`. Unverified: whether `kind` ever takes a third value.
 
 ## `message_limit` SSE event
@@ -133,8 +133,8 @@ Endpoints observed (all same-origin, session-cookie auth like the rest of claude
   `security_tier`. **Requires an `anthropic-version` request header** (e.g. `2023-06-01`) —
   omitting it returns `400 invalid_request_error: "anthropic-version: header is required"`. This
   only matters for a manual/hook-side `fetch`; the page's own requests already send it, so a
-  passive `window.fetch`-wrapping hook (the extension's actual capture mechanism, `CLAUDE.md`
-  section 5) never needs to construct this header itself.
+  passive `window.fetch`-wrapping hook (the extension's actual capture mechanism, see
+  `packages/extension/CLAUDE.md`) never needs to construct this header itself.
 - `GET /v1/code/sessions/{id}/events?limit=&sort_order=&cursor=` — paginated event log,
   `{data: [...], resume_cursor}`. Each event: `{event_id, event_type, created_at, sequence_num,
   source, sent_by_account_id, device_attestation_status, payload}`. `event_type` values seen in
@@ -148,7 +148,7 @@ Endpoints observed (all same-origin, session-cookie auth like the rest of claude
   usage tracking).
 - The account-level endpoints are **identical** to claude.ai chat: `GET
   /api/organizations/{org_id}/usage`, `.../subscription_details`, `.../notification/preferences`,
-  `.../prepaid/credits`, `.../overage_credit_grant`. Confirms `CLAUDE.md` section 4's assumption
+  `.../prepaid/credits`, `.../overage_credit_grant`. Confirms the original assumption
   that `/usage` is the single source of truth across surfaces — claude.ai/code doesn't have (or
   need) its own copy.
 
@@ -184,7 +184,7 @@ currently rate-limited" but not for the exact percentage.
 `event_type`s (`user`/`assistant`/`system`/`result`/`control_*`) carry real conversation
 content — confirmed directly when a `post_turn_summary.needs_action` field on this very
 session echoed back a fragment of this conversation's own text during capture. Per this
-project's "never log conversation content" rule (`CLAUDE.md` section 9), those event types and
+project's "never log conversation content" rule (see the root `CLAUDE.md`), those event types and
 the `post_turn_summary` field are **deliberately not fixtured** and any future schema for them
 must be validated structurally (shape/key names only) without a real captured value ever
 landing in a committed fixture file.
@@ -211,8 +211,7 @@ connected" until Chrome was restarted). Nothing about `claude.ai/code` itself ne
 
 None of the above block building the `message_limit` discriminated union or the limit-bar UI
 now that both major branches (overage / non-overage) are captured — they're refinements to
-layer on once that's built, not blockers to starting it. Building claude.ai/code support in the
-extension is now unblocked at the discovery level too, but is a separate, not-yet-started
-feature-build task (hook wiring, a `rate_limit_event`/`external_metadata.rate_limit_info` zod
-schema in `packages/shared`, and a decision on whether/how to fold it into the existing
-`LimitSnapshot` model) — this doc only resolves the "can we even see the data" question.
+layer on once that's built, not blockers to starting it. claude.ai/code support has since been
+built from this discovery (`packages/shared/src/claude-ai/code-rate-limit.ts`, folded into the
+existing `LimitSnapshot` model, and wired up in the extension's hook and background worker);
+this doc only records the "can we even see the data" question and what the captures showed.
