@@ -236,7 +236,7 @@
   <header class="masthead">
     <p class="eyebrow">Privacy Policy</p>
     <h1 class="heading">Claude Usage Companion</h1>
-    <p class="meta"><strong>Effective:</strong> October 11, 2026 &nbsp;·&nbsp; <strong>Applies to:</strong> the browser extension and its optional local daemon &nbsp;·&nbsp; <strong>Version:</strong> extension 0.3.2, daemon 0.3.2</p>
+    <p class="meta"><strong>Effective:</strong> October 13, 2026 &nbsp;·&nbsp; <strong>Applies to:</strong> the browser extension and its optional local daemon &nbsp;·&nbsp; <strong>Version:</strong> extension 0.3.2, daemon 0.3.2</p>
     <div class="summary">
       <p><strong>In short:</strong> nothing you do in this extension leaves your computer. There
       is no account, no server, no analytics, and no copy of your conversations anywhere but
@@ -279,9 +279,11 @@
 
     <section id="extension-data">
       <h2><span class="num">02</span> What the extension reads</h2>
-      <p>The extension only activates on <code class="mono">claude.ai</code> pages. While you're
-      there, it reads a few things directly out of the page's own network traffic — it never
-      touches Claude Code's local files itself:</p>
+      <p>The extension's page scripts only run on <code class="mono">claude.ai</code> pages. While
+      you're there, it picks a few things out of the page's own network traffic — it never
+      touches Claude Code's local files itself. Separately, every few minutes its background
+      worker asks claude.ai for the same usage numbers directly, using your existing signed-in
+      session, so the bars stay current even when no claude.ai tab is open:</p>
       <div class="fact-grid">
         <div class="fact">
           <div class="label">Usage snapshots</div>
@@ -289,7 +291,7 @@
         </div>
         <div class="fact">
           <div class="label">Live limit updates</div>
-          <div class="value">The same numbers, refreshed in real time while you're actively chatting, so the bars stay current without polling.</div>
+          <div class="value">The same numbers, refreshed in real time while you're actively chatting, between the periodic checks.</div>
         </div>
         <div class="fact">
           <div class="label">Claude Code on the web limit events</div>
@@ -300,8 +302,10 @@
           <div class="value">The figures claude.ai's own "Usage credits" panel shows: this month's pay-as-you-go spend against your limit.</div>
         </div>
       </div>
-      <p>It does not read message content, does not read your conversation history, and does not
-      modify anything claude.ai sends to or receives from your browser.</p>
+      <p>It looks only for usage-limit information in those responses. Anything else they contain,
+      including message content, is discarded inside the page and is never stored, logged, or
+      transmitted. It does not read your conversation history, and it does not modify anything
+      claude.ai sends to or receives from your browser.</p>
     </section>
 
     <section id="daemon-data">
@@ -388,9 +392,10 @@
       <h2><span class="num">07</span> Security</h2>
       <p>
         The local daemon binds only to <code class="mono">127.0.0.1</code>, requires a bearer
-        token on every request, and rejects any request coming from a regular web page — so a
+        token on every request (apart from a bare health check and the one-time pairing
+        handshake that hands the extension its token), and rejects any request coming from a regular web page — so a
         malicious website cannot reach it. Every piece of data the extension receives, from
-        claude.ai or from the daemon, is validated against a strict schema before it's trusted;
+        claude.ai or from the daemon, is validated against a schema before it's trusted;
         anything unexpected is discarded rather than acted on. The daemon itself writes only to
         its own local config directory — never to any project directory.
       </p>
