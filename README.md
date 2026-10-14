@@ -5,6 +5,9 @@
 [**Install from the Chrome Web Store →**](https://chromewebstore.google.com/detail/chjbjdabpficejgogljohhlobfaehepl)
 (Edge can install the same listing directly; Firefox builds from source — see Installation below)
 
+Write-ups: [how it captures usage and forecasts limits](https://dev.to/rehberodhano/predicting-when-youll-hit-your-claude-usage-limit-without-scraping-the-page-1llh) ·
+[what's new in v0.3.2 — spike inspector, attribution, subagents](https://dev.to/rehberodhano/claude-usage-jumped-how-i-added-project-session-and-subagent-attribution-to-my-usage-tracker-5bjm)
+
 A cross-browser extension (Chrome, Edge, Firefox) with an optional local daemon that gives you
 one place to see Claude usage across claude.ai and the Claude Code CLI: session and weekly
 limit bars, burn-rate forecasts, multi-week history, CLI attribution, cross-project session
